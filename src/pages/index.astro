@@ -1,5 +1,18 @@
 ---
 import Layout from "../layouts/Layout.astro";
+import Map from "../components/Map.astro";
+import Sidebar from "../components/Sidebar.astro";
+import AnalysisPanel from "../components/AnalysisPanel.astro";
+import "../styles/global.css";
 ---
 
-<Layout />
+<Layout title="Perú Geo Data Explorer">
+    <header class="app-header">
+        <h1>Perú Geo Data Explorer</h1>
+    </header>
+    <main class="app-container">
+        <Sidebar />
+        <Map />
+        <AnalysisPanel />
+    </main>
+</Layout>

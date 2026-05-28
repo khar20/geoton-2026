@@ -1,0 +1,61 @@
+---
+import "maplibre-gl/dist/maplibre-gl.css";
+---
+
+<div id="map" class="map-container"></div>
+
+<script>
+    import maplibregl from "maplibre-gl";
+
+    // initialize map
+    const map = new maplibregl.Map({
+        container: "map",
+        style: "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json", // clean, light basemap
+        center: [-75.0152, -9.19], // center of Peru
+        zoom: 5,
+    });
+
+    let currentLayerId = null;
+
+    // listen for Dataset Changes to load WMS
+    window.addEventListener("datasetChanged", (e) => {
+        const { id, url } = e.detail;
+
+        // remove existing layer if it exists
+        if (currentLayerId) {
+            if (map.getLayer(currentLayerId)) map.removeLayer(currentLayerId);
+            if (map.getSource(currentLayerId)) map.removeSource(currentLayerId);
+            currentLayerId = null;
+        }
+
+        // add new WMS Layer
+        if (id && url) {
+            currentLayerId = `wms-${id}`;
+
+            map.addSource(currentLayerId, {
+                type: "raster",
+                tiles: [url],
+                tileSize: 256,
+            });
+
+            map.addLayer({
+                id: currentLayerId,
+                type: "raster",
+                source: currentLayerId,
+                paint: {
+                    "raster-opacity": 0.8,
+                },
+            });
+        }
+    });
+
+    // listen for location changes to fly map
+    window.addEventListener("locationChanged", (e) => {
+        const { lat, lng, zoom } = e.detail;
+        map.flyTo({
+            center: [lng, lat],
+            zoom: zoom,
+            essential: true,
+        });
+    });
+</script>

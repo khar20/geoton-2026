@@ -1,0 +1,61 @@
+---
+
+---
+
+<aside class="panel analysis-panel">
+    <h2>Data Analysis</h2>
+
+    <div id="analysis-content">
+        <p>
+            <strong>Location Level:</strong>
+            <span id="lbl-level">National</span>
+        </p>
+        <p><strong>Current Area:</strong> <span id="lbl-area">Perú</span></p>
+        <p>
+            <strong>Active Dataset:</strong>
+            <span id="lbl-dataset">None</span>
+        </p>
+
+        <hr
+            style="margin: 1.5rem 0; border: 0; border-top: 1px solid var(--border-color);"
+        />
+
+        <div id="stats-container">
+            <p style="color: #666;">Select a dataset to view analysis.</p>
+        </div>
+    </div>
+</aside>
+
+<script is:inline>
+    const lblLevel = document.getElementById("lbl-level");
+    const lblArea = document.getElementById("lbl-area");
+    const lblDataset = document.getElementById("lbl-dataset");
+    const statsContainer = document.getElementById("stats-container");
+
+    window.addEventListener("locationChanged", (e) => {
+        if (lblLevel && lblArea) {
+            lblLevel.textContent = e.detail.level;
+            lblArea.textContent = e.detail.name;
+            updateAnalysis();
+        }
+    });
+
+    window.addEventListener("datasetChanged", (e) => {
+        lblDataset.textContent = e.detail.name || "None";
+        updateAnalysis();
+    });
+
+    function updateAnalysis() {
+        if (lblDataset.textContent !== "None") {
+            statsContainer.innerHTML = `
+            <div style="background: #f8f9fa; padding: 1rem; border-radius: 4px;">
+                <h4 style="margin-top:0;">${lblArea.textContent} Summary</h4>
+                <p>Mock Data: <strong>42%</strong> coverage</p>
+                <p>Trend: <strong>+5%</strong> since last year</p>
+            </div>
+            `;
+        } else {
+            statsContainer.innerHTML = `<p style="color: #666;">Select a dataset to view analysis.</p>`;
+        }
+    }
+</script>

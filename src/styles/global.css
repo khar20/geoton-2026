@@ -1,0 +1,75 @@
+:root {
+  --primary-color: #2c3e50;
+  --bg-color: #f4f7f6;
+  --panel-bg: #ffffff;
+  --border-color: #e0e0e0;
+}
+
+body,
+html {
+  margin: 0;
+  padding: 0;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  height: 100vh;
+  background-color: var(--bg-color);
+  overflow: hidden;
+}
+
+.app-header {
+  background-color: var(--primary-color);
+  color: white;
+  padding: 1rem;
+  height: 60px;
+  box-sizing: border-box;
+}
+
+.app-header h1 {
+  margin: 0;
+  font-size: 1.5rem;
+}
+
+.app-container {
+  display: flex;
+  height: calc(100vh - 60px);
+}
+
+.panel {
+  background: var(--panel-bg);
+  padding: 1.5rem;
+  box-sizing: border-box;
+  overflow-y: auto;
+}
+
+.sidebar {
+  width: 300px;
+  border-right: 1px solid var(--border-color);
+}
+
+.map-container {
+  flex-grow: 1;
+  position: relative;
+}
+
+.analysis-panel {
+  width: 350px;
+  border-left: 1px solid var(--border-color);
+}
+
+/* Form Styles */
+.form-group {
+  margin-bottom: 1rem;
+}
+
+label {
+  display: block;
+  margin-bottom: 0.5rem;
+  font-weight: bold;
+}
+
+select,
+input {
+  width: 100%;
+  padding: 0.5rem;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+}
