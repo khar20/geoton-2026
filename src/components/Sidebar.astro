@@ -1,78 +1,78 @@
 ---
-import { datasets } from '../config/datasets.js';
+import { datasets } from "../config/datasets";
 ---
 
 <aside class="panel sidebar">
-  <h2>Filters</h2>
-  
-  <div class="form-group">
-    <label for="dataset-select">Select Dataset</label>
-    <select id="dataset-select">
-      <option value="">-- None --</option>
-      {datasets.map(ds => (
-        <option value={ds.id} data-url={ds.wmsUrl}>{ds.name}</option>
-      ))}
-    </select>
-  </div>
+    <h2>Filters</h2>
 
-  <div class="form-group">
-    <label for="region-select">Region (Departamento)</label>
-    <select id="region-select">
-      <option value="">National (All Perú)</option>
-      <option value="-12.0464,-77.0428,10">Lima</option>
-      <option value="-8.1091,-79.0215,10">La Libertad</option>
-      <option value="-13.5320,-71.9675,10">Cusco</option>
-      <!-- Add more regions dynamically via API later -->
-    </select>
-  </div>
+    <div class="form-group">
+        <label for="dataset-select">Select Dataset</label>
+        <select id="dataset-select">
+            <option value="">-- None --</option>
+            {
+                datasets.map((ds) => (
+                    <option value={ds.id} data-url={ds.clientUrl}>
+                        {ds.name}
+                    </option>
+                ))
+            }
+        </select>
+    </div>
 
-  <div class="form-group">
-    <label for="province-select">Province</label>
-    <select id="province-select" disabled>
-      <option value="">Select Region First</option>
-    </select>
-  </div>
-
-  <div class="form-group">
-    <label for="district-select">District</label>
-    <select id="district-select" disabled>
-      <option value="">Select Province First</option>
-    </select>
-  </div>
+    <div class="form-group">
+        <label for="region-select">Region (Departamento)</label>
+        <select id="region-select">
+            <option value="">National (All Perú)</option>
+            <option value="-12.0464,-77.0428,10">Lima</option>
+            <option value="-8.1091,-79.0215,10">La Libertad</option>
+            <option value="-13.5320,-71.9675,10">Cusco</option>
+        </select>
+    </div>
 </aside>
 
-<script is:inline>
-  // Handle Dataset Change
-  const datasetSelect = document.getElementById('dataset-select');
-  datasetSelect.addEventListener('change', (e) => {
-    const selectedOption = e.target.options[e.target.selectedIndex];
-    const wmsUrl = selectedOption.getAttribute('data-url');
-    const datasetId = e.target.value;
-    const datasetName = selectedOption.text;
+<script>
+    import type { DatasetEventDetail, LocationEventDetail } from "../types";
 
-    // Dispatch event to Map and Analysis Panel
-    window.dispatchEvent(new CustomEvent('datasetChanged', { 
-      detail: { id: datasetId, url: wmsUrl, name: datasetName } 
-    }));
-  });
+    const datasetSelect = document.getElementById(
+        "dataset-select",
+    ) as HTMLSelectElement;
+    const regionSelect = document.getElementById(
+        "region-select",
+    ) as HTMLSelectElement;
 
-  // Handle Location Change
-  const regionSelect = document.getElementById('region-select');
-  regionSelect.addEventListener('change', (e) => {
-    const val = e.target.value;
-    const regionName = e.target.options[e.target.selectedIndex].text;
-    
-    if(val) {
-      const [lat, lng, zoom] = val.split(',');
-      window.dispatchEvent(new CustomEvent('locationChanged', { 
-        detail: { lat: parseFloat(lat), lng: parseFloat(lng), zoom: parseInt(zoom), name: regionName, level: 'Region' } 
-      }));
-    } else {
-      // Reset to National
-      window.dispatchEvent(new CustomEvent('locationChanged', { 
-        detail: { lat: -9.19, lng: -75.0152, zoom: 5, name: 'Perú', level: 'National' } 
-      }));
-    }
-    // Logic to populate provinces goes here...
-  });
+    datasetSelect.addEventListener("change", (e) => {
+        const target = e.target as HTMLSelectElement;
+        const selectedOption = target.options[target.selectedIndex];
+
+        const detail: DatasetEventDetail = {
+            id: target.value,
+            url: selectedOption.getAttribute("data-url") || "",
+            name: selectedOption.text,
+        };
+
+        window.dispatchEvent(new CustomEvent("datasetChanged", { detail }));
+    });
+
+    regionSelect.addEventListener("change", (e) => {
+        const target = e.target as HTMLSelectElement;
+        const val = target.value;
+        const regionName = target.options[target.selectedIndex].text;
+
+        let detail: LocationEventDetail;
+
+        if (val) {
+            const [lat, lng, zoom] = val.split(",").map(Number);
+            detail = { lat, lng, zoom, name: regionName, level: "Region" };
+        } else {
+            detail = {
+                lat: -9.19,
+                lng: -75.0152,
+                zoom: 5,
+                name: "Perú",
+                level: "National",
+            };
+        }
+
+        window.dispatchEvent(new CustomEvent("locationChanged", { detail }));
+    });
 </script>

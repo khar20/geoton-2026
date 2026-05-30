@@ -6,56 +6,60 @@ import "maplibre-gl/dist/maplibre-gl.css";
 
 <script>
     import maplibregl from "maplibre-gl";
+    import type { DatasetEventDetail, LocationEventDetail } from "../types";
 
-    // initialize map
     const map = new maplibregl.Map({
         container: "map",
-        style: "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json", // clean, light basemap
-        center: [-75.0152, -9.19], // center of Peru
+        style: "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json",
+        center: [-75.0152, -9.19],
         zoom: 5,
     });
 
-    let currentLayerId = null;
+    let currentLayerId: string | null = null;
 
-    // listen for Dataset Changes to load WMS
-    window.addEventListener("datasetChanged", (e) => {
-        const { id, url } = e.detail;
+    window.addEventListener(
+        "datasetChanged",
+        (e: CustomEvent<DatasetEventDetail>) => {
+            const { id, url } = e.detail;
 
-        // remove existing layer if it exists
-        if (currentLayerId) {
-            if (map.getLayer(currentLayerId)) map.removeLayer(currentLayerId);
-            if (map.getSource(currentLayerId)) map.removeSource(currentLayerId);
-            currentLayerId = null;
-        }
+            if (currentLayerId) {
+                if (map.getLayer(currentLayerId))
+                    map.removeLayer(currentLayerId);
+                if (map.getSource(currentLayerId))
+                    map.removeSource(currentLayerId);
+                currentLayerId = null;
+            }
 
-        // add new WMS Layer
-        if (id && url) {
-            currentLayerId = `wms-${id}`;
+            if (id && url) {
+                currentLayerId = `wms-${id}`;
 
-            map.addSource(currentLayerId, {
-                type: "raster",
-                tiles: [url],
-                tileSize: 256,
+                map.addSource(currentLayerId, {
+                    type: "raster",
+                    tiles: [url],
+                    tileSize: 256,
+                });
+
+                map.addLayer({
+                    id: currentLayerId,
+                    type: "raster",
+                    source: currentLayerId,
+                    paint: {
+                        "raster-opacity": 0.8,
+                    },
+                });
+            }
+        },
+    );
+
+    window.addEventListener(
+        "locationChanged",
+        (e: CustomEvent<LocationEventDetail>) => {
+            const { lat, lng, zoom } = e.detail;
+            map.flyTo({
+                center: [lng, lat],
+                zoom: zoom,
+                essential: true,
             });
-
-            map.addLayer({
-                id: currentLayerId,
-                type: "raster",
-                source: currentLayerId,
-                paint: {
-                    "raster-opacity": 0.8,
-                },
-            });
-        }
-    });
-
-    // listen for location changes to fly map
-    window.addEventListener("locationChanged", (e) => {
-        const { lat, lng, zoom } = e.detail;
-        map.flyTo({
-            center: [lng, lat],
-            zoom: zoom,
-            essential: true,
-        });
-    });
+        },
+    );
 </script>
