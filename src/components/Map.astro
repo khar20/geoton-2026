@@ -1,12 +1,27 @@
----
-import "maplibre-gl/dist/maplibre-gl.css";
----
+<div id="map" class="map-container">
+    <div id="map-loader" class="map-loader hidden">Loading data...</div>
 
-<div id="map" class="map-container"></div>
+    <!-- feature modal -->
+    <div id="feature-modal" class="modal-overlay hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="modal-title">Feature Data</h3>
+                <button id="modal-close" class="modal-close">&times;</button>
+            </div>
+            <div id="modal-body" class="modal-body">
+                <!-- table injected via JS -->
+            </div>
+        </div>
+    </div>
+</div>
 
 <script>
     import maplibregl from "maplibre-gl";
-    import type { DatasetEventDetail, LocationEventDetail } from "../types";
+    import shp from "shpjs";
+    import type {
+        DatasetEventDetail,
+        LocationEventDetail,
+    } from "../types";
 
     const map = new maplibregl.Map({
         container: "map",
@@ -15,39 +30,185 @@ import "maplibre-gl/dist/maplibre-gl.css";
         zoom: 5,
     });
 
-    let currentLayerId: string | null = null;
+    let activeLayerIds: string[] = [];
+    const loader = document.getElementById("map-loader") as HTMLDivElement;
+
+    // modal Elements
+    const modal = document.getElementById("feature-modal") as HTMLDivElement;
+    const modalTitle = document.getElementById(
+        "modal-title",
+    ) as HTMLHeadingElement;
+    const modalBody = document.getElementById("modal-body") as HTMLDivElement;
+    const modalClose = document.getElementById(
+        "modal-close",
+    ) as HTMLButtonElement;
+
+    modalClose.addEventListener("click", () => {
+        modal.classList.add("hidden");
+        clearHighlight();
+    });
+
+    // setup highlight source and layers on map load
+    map.on("load", () => {
+        map.addSource("highlight-source", {
+            type: "geojson",
+            data: { type: "FeatureCollection", features: [] },
+        });
+
+        // highlight for points
+        map.addLayer({
+            id: "highlight-circle",
+            type: "circle",
+            source: "highlight-source",
+            paint: {
+                "circle-radius": 8,
+                "circle-color": "transparent",
+                "circle-stroke-width": 3,
+                "circle-stroke-color": "var(--highlight-color)",
+            },
+            filter: ["==", "$type", "Point"],
+        });
+
+        // highlight for polygons
+        map.addLayer({
+            id: "highlight-fill",
+            type: "line",
+            source: "highlight-source",
+            paint: {
+                "line-width": 3,
+                "line-color": "var(--highlight-color)",
+            },
+            filter: ["==", "$type", "Polygon"],
+        });
+    });
+
+    function clearHighlight() {
+        const source = map.getSource(
+            "highlight-source",
+        ) as maplibregl.GeoJSONSource;
+        if (source) {
+            source.setData({ type: "FeatureCollection", features: [] });
+        }
+    }
 
     window.addEventListener(
         "datasetChanged",
-        (e: CustomEvent<DatasetEventDetail>) => {
-            const { id, url } = e.detail;
+        async (e: CustomEvent<DatasetEventDetail>) => {
+            const newDatasets = e.detail.activeDatasets;
+            const newLayerIds = newDatasets.map((ds) => `layer-${ds.id}`);
 
-            if (currentLayerId) {
-                if (map.getLayer(currentLayerId))
-                    map.removeLayer(currentLayerId);
-                if (map.getSource(currentLayerId))
-                    map.removeSource(currentLayerId);
-                currentLayerId = null;
+            // remove unchecked layers
+            activeLayerIds.forEach((id) => {
+                if (!newLayerIds.includes(id)) {
+                    if (map.getLayer(id)) map.removeLayer(id);
+                    const sourceId = id.replace("layer-", "source-");
+                    if (map.getSource(sourceId)) map.removeSource(sourceId);
+                }
+            });
+
+            // add checked layers
+            for (const ds of newDatasets) {
+                const sourceId = `source-${ds.id}`;
+                const layerId = `layer-${ds.id}`;
+
+                if (!map.getSource(sourceId)) {
+                    loader.classList.remove("hidden");
+
+                    try {
+                        let geojsonData: any;
+                        if (ds.format === "shapefile") {
+                            geojsonData = await shp(ds.url);
+                        } else if (ds.format === "geojson") {
+                            const response = await fetch(ds.url);
+                            geojsonData = await response.json();
+                        }
+
+                        map.addSource(sourceId, {
+                            type: "geojson",
+                            data: geojsonData,
+                        });
+
+                        let paintStyle = {};
+                        if (ds.geometryType === "fill") {
+                            paintStyle = {
+                                "fill-color": ds.color,
+                                "fill-opacity": 0.5,
+                                "fill-outline-color": "#000000",
+                            };
+                        } else if (ds.geometryType === "circle") {
+                            paintStyle = {
+                                "circle-color": ds.color,
+                                "circle-radius": 5,
+                                "circle-stroke-width": 1,
+                                "circle-stroke-color": "#ffffff",
+                            };
+                        } else if (ds.geometryType === "line") {
+                            paintStyle = {
+                                "line-color": ds.color,
+                                "line-width": 2,
+                            };
+                        }
+
+                        map.addLayer({
+                            id: layerId,
+                            type: ds.geometryType as any,
+                            source: sourceId,
+                            paint: paintStyle,
+                        } as any);
+
+                        // --- add interactivity layer ---
+                        map.on("click", layerId, (e) => {
+                            if (!e.features || e.features.length === 0) return;
+
+                            const feature = e.features[0];
+
+                            // highlight the selected feature
+                            const source = map.getSource(
+                                "highlight-source",
+                            ) as maplibregl.GeoJSONSource;
+                            source.setData(feature.geometry);
+
+                            // populate and show modal
+                            modalTitle.textContent = ds.name;
+                            let tableHtml =
+                                '<table class="property-table"><tbody>';
+
+                            for (const [key, value] of Object.entries(
+                                feature.properties || {},
+                            )) {
+                                tableHtml += `<tr><th>${key}</th><td>${value}</td></tr>`;
+                            }
+                            tableHtml += "</tbody></table>";
+
+                            modalBody.innerHTML = tableHtml;
+                            modal.classList.remove("hidden");
+                        });
+
+                        // change cursor on hover
+                        map.on("mouseenter", layerId, () => {
+                            map.getCanvas().style.cursor = "pointer";
+                        });
+                        map.on("mouseleave", layerId, () => {
+                            map.getCanvas().style.cursor = "";
+                        });
+                    } catch (error) {
+                        console.error(
+                            `Error loading dataset ${ds.name}:`,
+                            error,
+                        );
+                        alert(
+                            `Failed to load ${ds.name}. Check console for details.`,
+                        );
+                    } finally {
+                        loader.classList.add("hidden");
+                    }
+                }
             }
 
-            if (id && url) {
-                currentLayerId = `wms-${id}`;
-
-                map.addSource(currentLayerId, {
-                    type: "raster",
-                    tiles: [url],
-                    tileSize: 256,
-                });
-
-                map.addLayer({
-                    id: currentLayerId,
-                    type: "raster",
-                    source: currentLayerId,
-                    paint: {
-                        "raster-opacity": 0.8,
-                    },
-                });
-            }
+            activeLayerIds = newLayerIds;
+            // clear the highlight and hide modal just in case
+            clearHighlight();
+            modal.classList.add("hidden");
         },
     );
 
@@ -55,11 +216,7 @@ import "maplibre-gl/dist/maplibre-gl.css";
         "locationChanged",
         (e: CustomEvent<LocationEventDetail>) => {
             const { lat, lng, zoom } = e.detail;
-            map.flyTo({
-                center: [lng, lat],
-                zoom: zoom,
-                essential: true,
-            });
+            map.flyTo({ center: [lng, lat], zoom: zoom, essential: true });
         },
     );
 </script>

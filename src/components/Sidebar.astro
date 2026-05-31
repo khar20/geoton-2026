@@ -6,73 +6,191 @@ import { datasets } from "../config/datasets";
     <h2>Filters</h2>
 
     <div class="form-group">
-        <label for="dataset-select">Select Dataset</label>
-        <select id="dataset-select">
-            <option value="">-- None --</option>
-            {
-                datasets.map((ds) => (
-                    <option value={ds.id} data-url={ds.clientUrl}>
-                        {ds.name}
-                    </option>
-                ))
-            }
-        </select>
+        <label for="location-search">Search Location</label>
+        <div class="combobox-container">
+            <input
+                type="text"
+                id="location-search"
+                placeholder="Distrito, Provincia, Dept..."
+                autocomplete="off"
+            />
+            <ul id="location-results" class="dropdown-list hidden"></ul>
+        </div>
+        <button id="btn-reset" class="btn-secondary btn-full-width"
+            >Remove Filter (National)</button
+        >
     </div>
 
+    <hr class="panel-divider" />
+
     <div class="form-group">
-        <label for="region-select">Region (Departamento)</label>
-        <select id="region-select">
-            <option value="">National (All Perú)</option>
-            <option value="-12.0464,-77.0428,10">Lima</option>
-            <option value="-8.1091,-79.0215,10">La Libertad</option>
-            <option value="-13.5320,-71.9675,10">Cusco</option>
-        </select>
+        <label>Active Layers</label>
+        <div id="dataset-checkboxes">
+            {
+                datasets.map((ds) => (
+                    <label class="checkbox-label">
+                        <input
+                            type="checkbox"
+                            value={ds.id}
+                            data-url={ds.url}
+                            data-name={ds.name}
+                            data-format={ds.format}
+                            data-geometry={ds.geometryType}
+                            data-color={ds.color}
+                        />
+                        <span
+                            style={`display:inline-block; width:12px; height:12px; background-color:${ds.color}; border-radius:${ds.geometryType === "circle" ? "50%" : "2px"};`}
+                        />
+                        {ds.name}
+                    </label>
+                ))
+            }
+        </div>
     </div>
 </aside>
 
 <script>
-    import type { DatasetEventDetail, LocationEventDetail } from "../types";
+    import type {
+        DatasetEventDetail,
+        LocationEventDetail,
+        ActiveDataset,
+    } from "../types";
 
-    const datasetSelect = document.getElementById(
-        "dataset-select",
-    ) as HTMLSelectElement;
-    const regionSelect = document.getElementById(
-        "region-select",
-    ) as HTMLSelectElement;
+    const checkboxes = document.querySelectorAll(
+        '#dataset-checkboxes input[type="checkbox"]',
+    );
 
-    datasetSelect.addEventListener("change", (e) => {
-        const target = e.target as HTMLSelectElement;
-        const selectedOption = target.options[target.selectedIndex];
+    function updateDatasets() {
+        const activeDatasets: ActiveDataset[] = [];
+        checkboxes.forEach((cb) => {
+            const input = cb as HTMLInputElement;
+            if (input.checked) {
+                activeDatasets.push({
+                    id: input.value,
+                    url: input.getAttribute("data-url") || "",
+                    name: input.getAttribute("data-name") || "",
+                    format: input.getAttribute("data-format") as
+                        | "geojson"
+                        | "shapefile",
+                    geometryType: input.getAttribute("data-geometry") as
+                        | "fill"
+                        | "circle"
+                        | "line",
+                    color: input.getAttribute("data-color") || "#000",
+                });
+            }
+        });
 
-        const detail: DatasetEventDetail = {
-            id: target.value,
-            url: selectedOption.getAttribute("data-url") || "",
-            name: selectedOption.text,
-        };
+        window.dispatchEvent(
+            new CustomEvent<DatasetEventDetail>("datasetChanged", {
+                detail: { activeDatasets },
+            }),
+        );
+    }
 
-        window.dispatchEvent(new CustomEvent("datasetChanged", { detail }));
-    });
+    checkboxes.forEach((cb) => cb.addEventListener("change", updateDatasets));
 
-    regionSelect.addEventListener("change", (e) => {
-        const target = e.target as HTMLSelectElement;
-        const val = target.value;
-        const regionName = target.options[target.selectedIndex].text;
+    const searchInput = document.getElementById(
+        "location-search",
+    ) as HTMLInputElement;
+    const resultsList = document.getElementById(
+        "location-results",
+    ) as HTMLUListElement;
+    const btnReset = document.getElementById("btn-reset") as HTMLButtonElement;
 
-        let detail: LocationEventDetail;
+    const locationsDB = [
+        {
+            name: "Lima",
+            type: "Departamento",
+            lat: -12.0464,
+            lng: -77.0428,
+            zoom: 8,
+        },
+        {
+            name: "La Libertad",
+            type: "Departamento",
+            lat: -8.1091,
+            lng: -79.0215,
+            zoom: 8,
+        },
+        {
+            name: "Trujillo",
+            type: "Provincia",
+            lat: -8.1091,
+            lng: -79.0215,
+            zoom: 10,
+        },
+        {
+            name: "Miraflores",
+            type: "Distrito",
+            lat: -12.1211,
+            lng: -77.0295,
+            zoom: 13,
+        },
+    ];
 
-        if (val) {
-            const [lat, lng, zoom] = val.split(",").map(Number);
-            detail = { lat, lng, zoom, name: regionName, level: "Region" };
-        } else {
-            detail = {
-                lat: -9.19,
-                lng: -75.0152,
-                zoom: 5,
-                name: "Perú",
-                level: "National",
-            };
+    searchInput.addEventListener("input", (e) => {
+        const query = (e.target as HTMLInputElement).value.toLowerCase();
+        resultsList.innerHTML = "";
+        if (!query) {
+            resultsList.classList.add("hidden");
+            return;
         }
 
-        window.dispatchEvent(new CustomEvent("locationChanged", { detail }));
+        const filtered = locationsDB.filter((loc) =>
+            loc.name.toLowerCase().includes(query),
+        );
+        if (filtered.length > 0) {
+            resultsList.classList.remove("hidden");
+            filtered.forEach((loc) => {
+                const li = document.createElement("li");
+                li.innerHTML = `<strong>${loc.name}</strong> <small class="text-muted">(${loc.type})</small>`;
+                li.addEventListener("click", () => {
+                    searchInput.value = loc.name;
+                    resultsList.classList.add("hidden");
+                    window.dispatchEvent(
+                        new CustomEvent<LocationEventDetail>(
+                            "locationChanged",
+                            {
+                                detail: {
+                                    lat: loc.lat,
+                                    lng: loc.lng,
+                                    zoom: loc.zoom,
+                                    name: loc.name,
+                                    level: loc.type,
+                                },
+                            },
+                        ),
+                    );
+                });
+                resultsList.appendChild(li);
+            });
+        } else {
+            resultsList.classList.add("hidden");
+        }
+    });
+
+    document.addEventListener("click", (e) => {
+        if (
+            !searchInput.contains(e.target as Node) &&
+            !resultsList.contains(e.target as Node)
+        ) {
+            resultsList.classList.add("hidden");
+        }
+    });
+
+    btnReset.addEventListener("click", () => {
+        searchInput.value = "";
+        window.dispatchEvent(
+            new CustomEvent<LocationEventDetail>("locationChanged", {
+                detail: {
+                    lat: -9.19,
+                    lng: -75.0152,
+                    zoom: 5,
+                    name: "Perú",
+                    level: "National",
+                },
+            }),
+        );
     });
 </script>

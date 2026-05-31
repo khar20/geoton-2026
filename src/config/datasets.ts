@@ -1,24 +1,30 @@
 export interface Dataset {
   id: string;
   name: string;
-  targetBaseUrl: string;
-  clientUrl: string;
+  url: string;
+  format: 'geojson' | 'shapefile';
+  geometryType: 'fill' | 'circle' | 'line';
+  color: string;
   description: string;
 }
 
 export const datasets: Dataset[] = [
   {
-    id: 'senamhi-data',
-    name: 'SENAMHI Dataset',
-    targetBaseUrl: 'https://idesep.senamhi.gob.pe:443/geoserver/g_08_01/08_01_013_03_001_532_0000_00_00/ows?service=WMS&version=1.1.1&request=GetMap&layers=g_08_01:08_01_013_03_001_532_0000_00_00',
-    clientUrl: '/api/wms?dataset=senamhi-data&bbox={bbox-epsg-3857}',
-    description: 'National climate data from SENAMHI.'
+    id: 'hospitales',
+    name: 'Hospitales',
+    url: '/data/Hospitales.zip',
+    format: 'shapefile',
+    geometryType: 'circle',
+    color: '#e74c3c', // Red points
+    description: 'Hospitales del Perú.'
   },
   {
-    id: 'minsa-salud',
-    name: 'GeoPeru Conectividad Salud',
-    targetBaseUrl: 'https://espacialg.geoperu.gob.pe/geoserver/geoperu/peru_conect_salud_/wms?service=WMS&version=1.1.1&request=GetMap&layers=geoperu:peru_conect_salud_',
-    clientUrl: '/api/wms?dataset=minsa-salud&bbox={bbox-epsg-3857}',
-    description: 'Health connectivity data from GeoPeru.'
+    id: 'centro-poblado-poblacion',
+    name: 'Centros Poblados',
+    url: '/data/centro-poblado-poblacion.geojson',
+    format: 'geojson',
+    geometryType: 'circle',
+    color: '#2ecc71', // Green points
+    description: 'Centros Poblados del Perú.'
   }
 ];

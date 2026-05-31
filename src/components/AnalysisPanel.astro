@@ -1,7 +1,3 @@
----
-
----
-
 <aside class="panel analysis-panel">
     <h2>Data Analysis</h2>
 
@@ -11,51 +7,85 @@
             <span id="lbl-level">National</span>
         </p>
         <p><strong>Current Area:</strong> <span id="lbl-area">Perú</span></p>
-        <p>
-            <strong>Active Dataset:</strong>
-            <span id="lbl-dataset">None</span>
-        </p>
 
-        <hr
-            style="margin: 1.5rem 0; border: 0; border-top: 1px solid var(--border-color);"
-        />
+        <hr class="panel-divider" />
 
         <div id="stats-container">
-            <p style="color: #666;">Select a dataset to view analysis.</p>
+            <p class="text-muted">Select a dataset to view analysis.</p>
         </div>
     </div>
 </aside>
 
-<script is:inline>
-    const lblLevel = document.getElementById("lbl-level");
-    const lblArea = document.getElementById("lbl-area");
-    const lblDataset = document.getElementById("lbl-dataset");
-    const statsContainer = document.getElementById("stats-container");
+<script>
+    import type {
+        DatasetEventDetail,
+        LocationEventDetail,
+        ActiveDataset,
+    } from "../types";
 
-    window.addEventListener("locationChanged", (e) => {
-        if (lblLevel && lblArea) {
-            lblLevel.textContent = e.detail.level;
-            lblArea.textContent = e.detail.name;
-            updateAnalysis();
+    const lblLevel = document.getElementById("lbl-level") as HTMLSpanElement;
+    const lblArea = document.getElementById("lbl-area") as HTMLSpanElement;
+    const statsContainer = document.getElementById(
+        "stats-container",
+    ) as HTMLDivElement;
+
+    let currentLevel = "National";
+    let currentArea = "Perú";
+    let activeDatasets: ActiveDataset[] = [];
+
+    window.addEventListener(
+        "locationChanged",
+        (e: CustomEvent<LocationEventDetail>) => {
+            currentLevel = e.detail.level;
+            currentArea = e.detail.name;
+            lblLevel.textContent = currentLevel;
+            lblArea.textContent = currentArea;
+            fetchRealStats();
+        },
+    );
+
+    window.addEventListener(
+        "datasetChanged",
+        (e: CustomEvent<DatasetEventDetail>) => {
+            activeDatasets = e.detail.activeDatasets;
+            fetchRealStats();
+        },
+    );
+
+    async function fetchRealStats() {
+        if (activeDatasets.length === 0) {
+            statsContainer.innerHTML = `<p class="text-muted">Select a dataset to view analysis.</p>`;
+            return;
         }
-    });
 
-    window.addEventListener("datasetChanged", (e) => {
-        lblDataset.textContent = e.detail.name || "None";
-        updateAnalysis();
-    });
+        statsContainer.innerHTML = `<p class="text-muted">Loading statistics for ${currentArea}...</p>`;
 
-    function updateAnalysis() {
-        if (lblDataset.textContent !== "None") {
-            statsContainer.innerHTML = `
-            <div style="background: #f8f9fa; padding: 1rem; border-radius: 4px;">
-                <h4 style="margin-top:0;">${lblArea.textContent} Summary</h4>
-                <p>Mock Data: <strong>42%</strong> coverage</p>
-                <p>Trend: <strong>+5%</strong> since last year</p>
-            </div>
-            `;
-        } else {
-            statsContainer.innerHTML = `<p style="color: #666;">Select a dataset to view analysis.</p>`;
+        try {
+            const datasetIds = activeDatasets.map((d) => d.id).join(",");
+            const url = `/api/stats?level=${encodeURIComponent(currentLevel)}&area=${encodeURIComponent(currentArea)}&datasets=${encodeURIComponent(datasetIds)}`;
+
+            const response = await fetch(url);
+            if (!response.ok) throw new Error("Network response was not ok");
+
+            const data = await response.json();
+
+            let html = "";
+            data.stats.forEach((stat: any) => {
+                const trendColor = stat.trend.startsWith("+") ? "green" : "red";
+                html += `
+                <div class="stat-card">
+                    <h4>${stat.datasetName}</h4>
+                    <div class="stat-value">${stat.value.toLocaleString()}</div>
+                    <p>${stat.metric}</p>
+                    <p style="color: ${trendColor};">Trend: <strong>${stat.trend}</strong></p>
+                </div>
+                `;
+            });
+
+            statsContainer.innerHTML = html;
+        } catch (error) {
+            console.error("Failed to fetch stats:", error);
+            statsContainer.innerHTML = `<p class="text-error">Error loading statistics. Please try again.</p>`;
         }
     }
 </script>

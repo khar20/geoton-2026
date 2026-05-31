@@ -3,6 +3,7 @@
   --bg-color: #f4f7f6;
   --panel-bg: #ffffff;
   --border-color: #e0e0e0;
+  --highlight-color: #f1c40f;
 }
 
 body,
@@ -45,17 +46,17 @@ html {
   border-right: 1px solid var(--border-color);
 }
 
-.map-container {
-  flex-grow: 1;
-  position: relative;
-}
-
 .analysis-panel {
   width: 350px;
   border-left: 1px solid var(--border-color);
 }
 
-/* Form Styles */
+.map-container {
+  flex-grow: 1;
+  position: relative;
+}
+
+/* Form & UI Elements */
 .form-group {
   margin-bottom: 1rem;
 }
@@ -67,9 +68,207 @@ label {
 }
 
 select,
-input {
+input[type="text"] {
   width: 100%;
   padding: 0.5rem;
   border: 1px solid var(--border-color);
   border-radius: 4px;
+  box-sizing: border-box;
+}
+
+.panel-divider {
+  margin: 1.5rem 0;
+  border: 0;
+  border-top: 1px solid var(--border-color);
+}
+
+.hidden {
+  display: none !important;
+}
+
+/* Sidebar Combobox */
+.combobox-container {
+  position: relative;
+}
+
+.dropdown-list {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background: white;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 200px;
+  overflow-y: auto;
+  z-index: 1000;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.dropdown-list li {
+  padding: 0.5rem;
+  cursor: pointer;
+  border-bottom: 1px solid #eee;
+}
+
+.dropdown-list li:hover {
+  background: #f0f0f0;
+}
+
+/* Sidebar Checkboxes & Buttons */
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+  font-weight: normal;
+  cursor: pointer;
+}
+
+.btn-secondary {
+  background: #e0e0e0;
+  border: none;
+  padding: 0.5rem;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.btn-secondary:hover {
+  background: #d0d0d0;
+}
+
+.btn-full-width {
+  width: 100%;
+  margin-top: 0.5rem;
+}
+
+/* Analysis Panel Stats */
+.stat-card {
+  background: #f8f9fa;
+  padding: 1rem;
+  border-radius: 6px;
+  margin-bottom: 1rem;
+  border: 1px solid var(--border-color);
+}
+
+.stat-card h4 {
+  margin: 0 0 0.5rem 0;
+  color: var(--primary-color);
+}
+
+.stat-card p {
+  margin: 0.25rem 0;
+  font-size: 0.9rem;
+}
+
+.stat-value {
+  font-size: 1.5rem;
+  font-weight: bold;
+  color: #2c3e50;
+}
+
+.text-muted {
+  color: #666;
+}
+
+.text-error {
+  color: red;
+}
+
+/* Map Loader */
+.map-loader {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  background: white;
+  padding: 8px 12px;
+  border-radius: 4px;
+  z-index: 10;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  font-weight: bold;
+}
+
+/* Modal Styles */
+.modal-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.4);
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.modal-content {
+  background: white;
+  width: 400px;
+  max-width: 90%;
+  max-height: 80%;
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+}
+
+.modal-header {
+  padding: 1rem;
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.modal-header h3 {
+  margin: 0;
+  font-size: 1.2rem;
+  color: var(--primary-color);
+}
+
+.modal-close {
+  background: none;
+  border: none;
+  font-size: 1.5rem;
+  cursor: pointer;
+  color: #666;
+}
+
+.modal-close:hover {
+  color: #000;
+}
+
+.modal-body {
+  padding: 1rem;
+  overflow-y: auto;
+}
+
+/* Property Table */
+.property-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.property-table th,
+.property-table td {
+  padding: 8px;
+  border-bottom: 1px solid #eee;
+  text-align: left;
+  vertical-align: top;
+}
+
+.property-table th {
+  background-color: #f8f9fa;
+  width: 40%;
+  color: #555;
+}
+
+.property-table tr:last-child th,
+.property-table tr:last-child td {
+  border-bottom: none;
 }
