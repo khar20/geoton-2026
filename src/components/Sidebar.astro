@@ -3,28 +3,32 @@ import { datasets } from "../config/datasets";
 ---
 
 <aside class="panel sidebar">
-    <h2>Filters</h2>
+    <h2>Filtros y Búsqueda</h2>
 
     <div class="form-group">
-        <label for="location-search">Search Location</label>
+        <label for="location-search">Buscar Distrito / Provincia</label>
         <div class="combobox-container">
             <input
                 type="text"
                 id="location-search"
-                placeholder="Distrito, Provincia, Dept..."
+                placeholder="Ej. Trujillo, Miraflores..."
                 autocomplete="off"
             />
             <ul id="location-results" class="dropdown-list hidden"></ul>
         </div>
         <button id="btn-reset" class="btn-secondary btn-full-width"
-            >Remove Filter (National)</button
+            >Vista Nacional</button
         >
     </div>
 
     <hr class="panel-divider" />
 
     <div class="form-group">
-        <label>Active Layers</label>
+        <label>Capas de Servicios</label>
+        <p class="text-muted" style="font-size: 0.8rem; margin-top: 0;">
+            Activa las capas y haz clic en un Centro Poblado en el mapa para
+            calcular su accesibilidad.
+        </p>
         <div id="dataset-checkboxes">
             {
                 datasets.map((ds) => (
@@ -90,6 +94,7 @@ import { datasets } from "../config/datasets";
 
     checkboxes.forEach((cb) => cb.addEventListener("change", updateDatasets));
 
+    // todo: add search functionality
     const searchInput = document.getElementById(
         "location-search",
     ) as HTMLInputElement;
@@ -100,20 +105,6 @@ import { datasets } from "../config/datasets";
 
     const locationsDB = [
         {
-            name: "Lima",
-            type: "Departamento",
-            lat: -12.0464,
-            lng: -77.0428,
-            zoom: 8,
-        },
-        {
-            name: "La Libertad",
-            type: "Departamento",
-            lat: -8.1091,
-            lng: -79.0215,
-            zoom: 8,
-        },
-        {
             name: "Trujillo",
             type: "Provincia",
             lat: -8.1091,
@@ -121,11 +112,18 @@ import { datasets } from "../config/datasets";
             zoom: 10,
         },
         {
-            name: "Miraflores",
+            name: "Huamachuco",
             type: "Distrito",
-            lat: -12.1211,
-            lng: -77.0295,
-            zoom: 13,
+            lat: -7.8144,
+            lng: -78.0489,
+            zoom: 12,
+        },
+        {
+            name: "Lima",
+            type: "Departamento",
+            lat: -12.0464,
+            lng: -77.0428,
+            zoom: 8,
         },
     ];
 
@@ -170,15 +168,6 @@ import { datasets } from "../config/datasets";
         }
     });
 
-    document.addEventListener("click", (e) => {
-        if (
-            !searchInput.contains(e.target as Node) &&
-            !resultsList.contains(e.target as Node)
-        ) {
-            resultsList.classList.add("hidden");
-        }
-    });
-
     btnReset.addEventListener("click", () => {
         searchInput.value = "";
         window.dispatchEvent(
@@ -188,7 +177,7 @@ import { datasets } from "../config/datasets";
                     lng: -75.0152,
                     zoom: 5,
                     name: "Perú",
-                    level: "National",
+                    level: "Nacional",
                 },
             }),
         );

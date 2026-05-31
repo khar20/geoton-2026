@@ -1,26 +1,15 @@
 <div id="map" class="map-container">
-    <div id="map-loader" class="map-loader hidden">Loading data...</div>
-
-    <!-- feature modal -->
-    <div id="feature-modal" class="modal-overlay hidden">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h3 id="modal-title">Feature Data</h3>
-                <button id="modal-close" class="modal-close">&times;</button>
-            </div>
-            <div id="modal-body" class="modal-body">
-                <!-- table injected via JS -->
-            </div>
-        </div>
-    </div>
+    <div id="map-loader" class="map-loader hidden">Cargando datos...</div>
 </div>
 
 <script>
     import maplibregl from "maplibre-gl";
     import shp from "shpjs";
+    import * as turf from "@turf/turf";
     import type {
         DatasetEventDetail,
         LocationEventDetail,
+        AccessibilityStats,
     } from "../types";
 
     const map = new maplibregl.Map({
@@ -33,63 +22,27 @@
     let activeLayerIds: string[] = [];
     const loader = document.getElementById("map-loader") as HTMLDivElement;
 
-    // modal Elements
-    const modal = document.getElementById("feature-modal") as HTMLDivElement;
-    const modalTitle = document.getElementById(
-        "modal-title",
-    ) as HTMLHeadingElement;
-    const modalBody = document.getElementById("modal-body") as HTMLDivElement;
-    const modalClose = document.getElementById(
-        "modal-close",
-    ) as HTMLButtonElement;
+    // Caché de GeoJSON para Turf.js
+    const geojsonCache = new Map<string, any>();
 
-    modalClose.addEventListener("click", () => {
-        modal.classList.add("hidden");
-        clearHighlight();
-    });
-
-    // setup highlight source and layers on map load
+    // Configurar capa de resaltado
     map.on("load", () => {
         map.addSource("highlight-source", {
             type: "geojson",
             data: { type: "FeatureCollection", features: [] },
         });
-
-        // highlight for points
         map.addLayer({
             id: "highlight-circle",
             type: "circle",
             source: "highlight-source",
             paint: {
-                "circle-radius": 8,
+                "circle-radius": 10,
                 "circle-color": "transparent",
                 "circle-stroke-width": 3,
-                "circle-stroke-color": "var(--highlight-color)",
+                "circle-stroke-color": "#f1c40f",
             },
-            filter: ["==", "$type", "Point"],
-        });
-
-        // highlight for polygons
-        map.addLayer({
-            id: "highlight-fill",
-            type: "line",
-            source: "highlight-source",
-            paint: {
-                "line-width": 3,
-                "line-color": "var(--highlight-color)",
-            },
-            filter: ["==", "$type", "Polygon"],
         });
     });
-
-    function clearHighlight() {
-        const source = map.getSource(
-            "highlight-source",
-        ) as maplibregl.GeoJSONSource;
-        if (source) {
-            source.setData({ type: "FeatureCollection", features: [] });
-        }
-    }
 
     window.addEventListener(
         "datasetChanged",
@@ -97,23 +50,24 @@
             const newDatasets = e.detail.activeDatasets;
             const newLayerIds = newDatasets.map((ds) => `layer-${ds.id}`);
 
-            // remove unchecked layers
+            // Remover capas inactivas
             activeLayerIds.forEach((id) => {
                 if (!newLayerIds.includes(id)) {
                     if (map.getLayer(id)) map.removeLayer(id);
                     const sourceId = id.replace("layer-", "source-");
                     if (map.getSource(sourceId)) map.removeSource(sourceId);
+                    const rawId = id.replace("layer-", "");
+                    geojsonCache.delete(rawId);
                 }
             });
 
-            // add checked layers
+            // Añadir nuevas capas
             for (const ds of newDatasets) {
                 const sourceId = `source-${ds.id}`;
                 const layerId = `layer-${ds.id}`;
 
                 if (!map.getSource(sourceId)) {
                     loader.classList.remove("hidden");
-
                     try {
                         let geojsonData: any;
                         if (ds.format === "shapefile") {
@@ -123,22 +77,21 @@
                             geojsonData = await response.json();
                         }
 
+                        // Guardar en caché para análisis espacial
+                        geojsonCache.set(ds.id, geojsonData);
+
                         map.addSource(sourceId, {
                             type: "geojson",
                             data: geojsonData,
                         });
 
                         let paintStyle = {};
-                        if (ds.geometryType === "fill") {
-                            paintStyle = {
-                                "fill-color": ds.color,
-                                "fill-opacity": 0.5,
-                                "fill-outline-color": "#000000",
-                            };
-                        } else if (ds.geometryType === "circle") {
+                        if (ds.geometryType === "circle") {
+                            // Hacemos los centros poblados un poco más grandes
+                            const radius = ds.id === "centros-poblados" ? 6 : 4;
                             paintStyle = {
                                 "circle-color": ds.color,
-                                "circle-radius": 5,
+                                "circle-radius": radius,
                                 "circle-stroke-width": 1,
                                 "circle-stroke-color": "#ffffff",
                             };
@@ -151,64 +104,104 @@
 
                         map.addLayer({
                             id: layerId,
-                            type: ds.geometryType as any,
+                            type: ds.geometryType,
                             source: sourceId,
                             paint: paintStyle,
-                        } as any);
-
-                        // --- add interactivity layer ---
-                        map.on("click", layerId, (e) => {
-                            if (!e.features || e.features.length === 0) return;
-
-                            const feature = e.features[0];
-
-                            // highlight the selected feature
-                            const source = map.getSource(
-                                "highlight-source",
-                            ) as maplibregl.GeoJSONSource;
-                            source.setData(feature.geometry);
-
-                            // populate and show modal
-                            modalTitle.textContent = ds.name;
-                            let tableHtml =
-                                '<table class="property-table"><tbody>';
-
-                            for (const [key, value] of Object.entries(
-                                feature.properties || {},
-                            )) {
-                                tableHtml += `<tr><th>${key}</th><td>${value}</td></tr>`;
-                            }
-                            tableHtml += "</tbody></table>";
-
-                            modalBody.innerHTML = tableHtml;
-                            modal.classList.remove("hidden");
                         });
 
-                        // change cursor on hover
-                        map.on("mouseenter", layerId, () => {
-                            map.getCanvas().style.cursor = "pointer";
-                        });
-                        map.on("mouseleave", layerId, () => {
-                            map.getCanvas().style.cursor = "";
-                        });
+                        // Interacción: Clic en Centro Poblado
+                        if (ds.id === "centros-poblados") {
+                            map.on("click", layerId, (e) => {
+                                if (!e.features || e.features.length === 0)
+                                    return;
+                                const feature = e.features[0];
+
+                                // Resaltar en el mapa
+                                const source = map.getSource(
+                                    "highlight-source",
+                                ) as maplibregl.GeoJSONSource;
+                                source.setData(feature.geometry);
+
+                                // CALCULAR ACCESIBILIDAD CON TURF
+                                const targetPoint = turf.point([
+                                    e.lngLat.lng,
+                                    e.lngLat.lat,
+                                ]);
+
+                                const calcNearest = (datasetId: string) => {
+                                    const data = geojsonCache.get(datasetId);
+                                    if (
+                                        !data ||
+                                        !data.features ||
+                                        data.features.length === 0
+                                    )
+                                        return null;
+                                    const nearest = turf.nearestPoint(
+                                        targetPoint,
+                                        data,
+                                    );
+                                    const distance = turf.distance(
+                                        targetPoint,
+                                        nearest,
+                                        { units: "kilometers" },
+                                    );
+                                    return {
+                                        distance,
+                                        name:
+                                            nearest.properties?.nombre ||
+                                            nearest.properties?.name ||
+                                            "Desconocido",
+                                    };
+                                };
+
+                                const salud = calcNearest("salud");
+                                const educacion = calcNearest("educacion");
+                                const comisaria = calcNearest("comisarias");
+
+                                // Definimos Triple Carencia si los 3 servicios están a más de 5km (puedes ajustar este umbral)
+                                const umbralKm = 5;
+                                const tripleCarencia =
+                                    salud?.distance > umbralKm &&
+                                    educacion?.distance > umbralKm &&
+                                    comisaria?.distance > umbralKm;
+
+                                window.dispatchEvent(
+                                    new CustomEvent<AccessibilityStats>(
+                                        "accessibilityCalculated",
+                                        {
+                                            detail: {
+                                                centroPoblado:
+                                                    feature.properties
+                                                        ?.nombre ||
+                                                    "Centro Poblado Seleccionado",
+                                                salud,
+                                                educacion,
+                                                comisaria,
+                                                tripleCarencia,
+                                            },
+                                        },
+                                    ),
+                                );
+                            });
+
+                            map.on("mouseenter", layerId, () => {
+                                map.getCanvas().style.cursor = "pointer";
+                            });
+                            map.on("mouseleave", layerId, () => {
+                                map.getCanvas().style.cursor = "";
+                            });
+                        }
                     } catch (error) {
                         console.error(
                             `Error loading dataset ${ds.name}:`,
                             error,
-                        );
-                        alert(
-                            `Failed to load ${ds.name}. Check console for details.`,
                         );
                     } finally {
                         loader.classList.add("hidden");
                     }
                 }
             }
-
             activeLayerIds = newLayerIds;
-            // clear the highlight and hide modal just in case
-            clearHighlight();
-            modal.classList.add("hidden");
         },
     );
 

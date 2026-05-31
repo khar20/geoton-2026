@@ -19,17 +19,18 @@ export interface LocationEventDetail {
   level: string;
 }
 
-export interface FeatureClickEventDetail {
-  title: string;
-  properties: Record<string, any>;
-  geometry: any;
-  geometryType: 'fill' | 'circle' | 'line';
+export interface AccessibilityStats {
+  centroPoblado: string;
+  salud: { distance: number; name: string } | null;
+  educacion: { distance: number; name: string } | null;
+  comisaria: { distance: number; name: string } | null;
+  tripleCarencia: boolean;
 }
 
 declare global {
   interface WindowEventMap {
     'datasetChanged': CustomEvent<DatasetEventDetail>;
     'locationChanged': CustomEvent<LocationEventDetail>;
-    'featureClicked': CustomEvent<FeatureClickEventDetail>;
+    'accessibilityCalculated': CustomEvent<AccessibilityStats>;
   }
 }
