@@ -147,10 +147,25 @@
                                     ) as maplibregl.GeoJSONSource
                                 ).setData(feature.geometry);
 
-                                const targetPoint = turf.point([
-                                    e.lngLat.lng,
-                                    e.lngLat.lat,
-                                ]);
+                                // Extraer coordenadas de forma segura (Point, MultiPoint o GeometryCollection)
+                                let coordinates: any;
+                                const geom = feature.geometry;
+                                if (geom.type === "Point") {
+                                    coordinates = (geom as any).coordinates;
+                                } else if (geom.type === "MultiPoint") {
+                                    coordinates = (geom as any).coordinates[0];
+                                } else if (geom.type === "GeometryCollection") {
+                                    const coll = geom as any;
+                                    const firstPoint = coll.geometries?.find(
+                                        (g: any) => g.type === "Point",
+                                    );
+                                    coordinates = firstPoint?.coordinates;
+                                }
+                                if (!coordinates) return;
+
+                                const targetPoint = turf.point(
+                                    coordinates as [number, number],
+                                );
                                 const analysisFeatures: any[] = [];
 
                                 // 1. Dibujar Radio de 5km
