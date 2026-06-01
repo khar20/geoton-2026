@@ -41,6 +41,7 @@ import { datasets } from "../config/datasets";
                             data-format={ds.format}
                             data-geometry={ds.geometryType}
                             data-color={ds.color}
+                            data-name-field={ds.nameField}
                         />
                         <span
                             style={`display:inline-block; width:12px; height:12px; background-color:${ds.color}; border-radius:${ds.geometryType === "circle" ? "50%" : "2px"};`}
@@ -81,6 +82,8 @@ import { datasets } from "../config/datasets";
                         | "circle"
                         | "line",
                     color: input.getAttribute("data-color") || "#000",
+                    nameField:
+                        input.getAttribute("data-name-field") || "nombre",
                 });
             }
         });

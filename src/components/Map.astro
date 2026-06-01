@@ -10,6 +10,7 @@
         DatasetEventDetail,
         LocationEventDetail,
         AccessibilityStats,
+        ActiveDataset,
     } from "../types";
 
     const map = new maplibregl.Map({
@@ -20,13 +21,44 @@
     });
 
     let activeLayerIds: string[] = [];
+    let currentActiveDatasets: ActiveDataset[] = []; // Guardamos la config actual
     const loader = document.getElementById("map-loader") as HTMLDivElement;
-
-    // Caché de GeoJSON para Turf.js
     const geojsonCache = new Map<string, any>();
 
-    // Configurar capa de resaltado
     map.on("load", () => {
+        // Capa para el radio de 5km y líneas de conexión
+        map.addSource("analysis-source", {
+            type: "geojson",
+            data: { type: "FeatureCollection", features: [] },
+        });
+
+        // Polígono del radio (5km)
+        map.addLayer({
+            id: "analysis-radius",
+            type: "fill",
+            source: "analysis-source",
+            filter: ["==", "$type", "Polygon"],
+            paint: {
+                "fill-color": "#f39c12",
+                "fill-opacity": 0.15,
+                "fill-outline-color": "#e67e22",
+            },
+        });
+
+        // Líneas punteadas hacia los servicios
+        map.addLayer({
+            id: "analysis-lines",
+            type: "line",
+            source: "analysis-source",
+            filter: ["==", "$type", "LineString"],
+            paint: {
+                "line-color": ["get", "color"], // Toma el color de las propiedades del GeoJSON
+                "line-width": 2,
+                "line-dasharray": [2, 2],
+            },
+        });
+
+        // Capa de resaltado del Centro Poblado
         map.addSource("highlight-source", {
             type: "geojson",
             data: { type: "FeatureCollection", features: [] },
@@ -36,10 +68,10 @@
             type: "circle",
             source: "highlight-source",
             paint: {
-                "circle-radius": 10,
-                "circle-color": "transparent",
-                "circle-stroke-width": 3,
-                "circle-stroke-color": "#f1c40f",
+                "circle-radius": 8,
+                "circle-color": "#f1c40f",
+                "circle-stroke-width": 2,
+                "circle-stroke-color": "#000",
             },
         });
     });
@@ -47,22 +79,27 @@
     window.addEventListener(
         "datasetChanged",
         async (e: CustomEvent<DatasetEventDetail>) => {
-            const newDatasets = e.detail.activeDatasets;
-            const newLayerIds = newDatasets.map((ds) => `layer-${ds.id}`);
+            currentActiveDatasets = e.detail.activeDatasets;
+            const newLayerIds = currentActiveDatasets.map(
+                (ds) => `layer-${ds.id}`,
+            );
 
-            // Remover capas inactivas
+            // Limpiar capas inactivas
             activeLayerIds.forEach((id) => {
                 if (!newLayerIds.includes(id)) {
                     if (map.getLayer(id)) map.removeLayer(id);
                     const sourceId = id.replace("layer-", "source-");
                     if (map.getSource(sourceId)) map.removeSource(sourceId);
-                    const rawId = id.replace("layer-", "");
-                    geojsonCache.delete(rawId);
+                    geojsonCache.delete(id.replace("layer-", ""));
                 }
             });
 
-            // Añadir nuevas capas
-            for (const ds of newDatasets) {
+            // Limpiar análisis previo si se cambian las capas
+            (
+                map.getSource("analysis-source") as maplibregl.GeoJSONSource
+            )?.setData({ type: "FeatureCollection", features: [] });
+
+            for (const ds of currentActiveDatasets) {
                 const sourceId = `source-${ds.id}`;
                 const layerId = `layer-${ds.id}`;
 
@@ -77,58 +114,58 @@
                             geojsonData = await response.json();
                         }
 
-                        // Guardar en caché para análisis espacial
                         geojsonCache.set(ds.id, geojsonData);
-
                         map.addSource(sourceId, {
                             type: "geojson",
                             data: geojsonData,
                         });
 
-                        let paintStyle = {};
-                        if (ds.geometryType === "circle") {
-                            // Hacemos los centros poblados un poco más grandes
-                            const radius = ds.id === "centros-poblados" ? 6 : 4;
-                            paintStyle = {
-                                "circle-color": ds.color,
-                                "circle-radius": radius,
-                                "circle-stroke-width": 1,
-                                "circle-stroke-color": "#ffffff",
-                            };
-                        } else if (ds.geometryType === "line") {
-                            paintStyle = {
-                                "line-color": ds.color,
-                                "line-width": 2,
-                            };
-                        }
-
                         map.addLayer({
                             id: layerId,
                             type: ds.geometryType,
                             source: sourceId,
-                            paint: paintStyle,
+                            paint: {
+                                "circle-color": ds.color,
+                                "circle-radius":
+                                    ds.id === "centros-poblados" ? 5 : 4,
+                                "circle-stroke-width": 1,
+                                "circle-stroke-color": "#ffffff",
+                            },
                         });
 
-                        // Interacción: Clic en Centro Poblado
+                        // LÓGICA AL HACER CLIC EN UN CENTRO POBLADO
                         if (ds.id === "centros-poblados") {
                             map.on("click", layerId, (e) => {
                                 if (!e.features || e.features.length === 0)
                                     return;
                                 const feature = e.features[0];
 
-                                // Resaltar en el mapa
-                                const source = map.getSource(
-                                    "highlight-source",
-                                ) as maplibregl.GeoJSONSource;
-                                source.setData(feature.geometry);
+                                // Resaltar CP
+                                (
+                                    map.getSource(
+                                        "highlight-source",
+                                    ) as maplibregl.GeoJSONSource
+                                ).setData(feature.geometry);
 
-                                // CALCULAR ACCESIBILIDAD CON TURF
                                 const targetPoint = turf.point([
                                     e.lngLat.lng,
                                     e.lngLat.lat,
                                 ]);
+                                const analysisFeatures: any[] = [];
 
+                                // 1. Dibujar Radio de 5km
+                                const radiusPoly = turf.circle(targetPoint, 5, {
+                                    units: "kilometers",
+                                });
+                                analysisFeatures.push(radiusPoly);
+
+                                // 2. Función para calcular servicio más cercano y crear línea
                                 const calcNearest = (datasetId: string) => {
+                                    const config = currentActiveDatasets.find(
+                                        (d) => d.id === datasetId,
+                                    );
+                                    if (!config) return null; // Capa no está activa
+
                                     const data = geojsonCache.get(datasetId);
                                     if (
                                         !data ||
@@ -136,6 +173,7 @@
                                         data.features.length === 0
                                     )
                                         return null;
+
                                     const nearest = turf.nearestPoint(
                                         targetPoint,
                                         data,
@@ -145,35 +183,70 @@
                                         nearest,
                                         { units: "kilometers" },
                                     );
-                                    return {
-                                        distance,
-                                        name:
-                                            nearest.properties?.nombre ||
-                                            nearest.properties?.name ||
-                                            "Desconocido",
-                                    };
+
+                                    // USO DEL DICCIONARIO ESCALABLE (nameField)
+                                    const name =
+                                        nearest.properties?.[
+                                            config.nameField
+                                        ] || "Desconocido";
+
+                                    // Crear línea desde CP hasta el servicio
+                                    const line = turf.lineString(
+                                        [
+                                            targetPoint.geometry.coordinates,
+                                            nearest.geometry.coordinates,
+                                        ],
+                                        { color: config.color }, // Pasamos el color para pintarlo dinámicamente
+                                    );
+                                    analysisFeatures.push(line);
+
+                                    return { distance, name };
                                 };
 
                                 const salud = calcNearest("salud");
                                 const educacion = calcNearest("educacion");
                                 const comisaria = calcNearest("comisarias");
 
-                                // Definimos Triple Carencia si los 3 servicios están a más de 5km (puedes ajustar este umbral)
-                                const umbralKm = 5;
-                                const tripleCarencia =
-                                    salud?.distance > umbralKm &&
-                                    educacion?.distance > umbralKm &&
-                                    comisaria?.distance > umbralKm;
+                                const cpConfig = currentActiveDatasets.find(
+                                    (d) => d.id === "centros-poblados",
+                                );
+                                const cpName =
+                                    feature.properties?.[
+                                        cpConfig?.nameField || "nombre"
+                                    ] || "Centro Poblado";
 
+                                const tripleCarencia =
+                                    salud?.distance > 5 &&
+                                    educacion?.distance > 5 &&
+                                    comisaria?.distance > 5;
+
+                                // 3. Actualizar mapa con el radio y las líneas
+                                const fc =
+                                    turf.featureCollection(analysisFeatures);
+                                (
+                                    map.getSource(
+                                        "analysis-source",
+                                    ) as maplibregl.GeoJSONSource
+                                ).setData(fc);
+
+                                // ZOOM AUTOMÁTICO (FitBounds)
+                                const bbox = turf.bbox(fc);
+                                map.fitBounds(
+                                    bbox as [number, number, number, number],
+                                    {
+                                        padding: 60, // Margen en píxeles
+                                        maxZoom: 14, // Evitar zoom excesivo si todo está muy cerca
+                                        duration: 1500, // Animación suave
+                                    },
+                                );
+
+                                // Enviar datos al panel
                                 window.dispatchEvent(
                                     new CustomEvent<AccessibilityStats>(
                                         "accessibilityCalculated",
                                         {
                                             detail: {
-                                                centroPoblado:
-                                                    feature.properties
-                                                        ?.nombre ||
-                                                    "Centro Poblado Seleccionado",
+                                                centroPoblado: cpName,
                                                 salud,
                                                 educacion,
                                                 comisaria,

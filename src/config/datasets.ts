@@ -6,6 +6,7 @@ export interface Dataset {
   geometryType: 'fill' | 'circle' | 'line';
   color: string;
   description: string;
+  nameField: string;
 }
 
 export const datasets: Dataset[] = [
@@ -16,7 +17,8 @@ export const datasets: Dataset[] = [
     format: 'geojson',
     geometryType: 'circle',
     color: '#7f8c8d', // Gris
-    description: 'Puntos de centros poblados a nivel nacional.'
+    description: 'Puntos de centros poblados a nivel nacional.',
+    nameField: 'nombccpp',
   },
   {
     id: 'salud',
@@ -25,7 +27,8 @@ export const datasets: Dataset[] = [
     format: 'shapefile',
     geometryType: 'circle',
     color: '#e74c3c', // Rojo
-    description: 'Postas, centros médicos y hospitales.'
+    description: 'Postas, centros médicos y hospitales.',
+    nameField: 'NOMBRE',
   },
   {
     id: 'educacion',
@@ -34,7 +37,8 @@ export const datasets: Dataset[] = [
     format: 'shapefile',
     geometryType: 'circle',
     color: '#3498db', // Azul
-    description: 'Colegios públicos y privados.'
+    description: 'Colegios públicos y privados.',
+    nameField: 'INSTITUC',
   },
   {
     id: 'comisarias',
@@ -43,7 +47,8 @@ export const datasets: Dataset[] = [
     format: 'shapefile',
     geometryType: 'circle',
     color: '#2ecc71', // Verde
-    description: 'Comisarías PNP.'
+    description: 'Comisarías PNP.',
+    nameField: 'NOMBRE_COM',
   },
   {
     id: 'accesibilidad',
@@ -52,6 +57,7 @@ export const datasets: Dataset[] = [
     format: 'shapefile',
     geometryType: 'line',
     color: '#f39c12', // Naranja
-    description: 'Red vial nacional y vecinal.'
+    description: 'Red vial nacional y vecinal.',
+    nameField: 'nombre',
   }
 ];

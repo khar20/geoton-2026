@@ -5,6 +5,7 @@ export interface ActiveDataset {
   format: 'geojson' | 'shapefile';
   geometryType: 'fill' | 'circle' | 'line';
   color: string;
+  nameField: string;
 }
 
 export interface DatasetEventDetail {
