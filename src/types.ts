@@ -20,12 +20,33 @@ export interface LocationEventDetail {
   level: string;
 }
 
+export interface ServiceResult {
+  distance: number;
+  name: string;
+}
+
 export interface AccessibilityStats {
   centroPoblado: string;
-  salud: { distance: number; name: string } | null;
-  educacion: { distance: number; name: string } | null;
-  comisaria: { distance: number; name: string } | null;
+  salud: ServiceResult | null;
+  educacion: ServiceResult | null;
+  comisaria: ServiceResult | null;
   tripleCarencia: boolean;
+  /** [lng, lat] of the selected centro poblado */
+  coords?: [number, number];
+}
+
+export interface ThresholdEventDetail {
+  thresholdKm: number;
+}
+
+export interface ScanTripleCarenciaDetail {
+  thresholdKm: number;
+}
+
+export interface TripleCarenciaResultDetail {
+  count: number;
+  total: number;
+  thresholdKm: number;
 }
 
 declare global {
@@ -33,5 +54,8 @@ declare global {
     'datasetChanged': CustomEvent<DatasetEventDetail>;
     'locationChanged': CustomEvent<LocationEventDetail>;
     'accessibilityCalculated': CustomEvent<AccessibilityStats>;
+    'thresholdChanged': CustomEvent<ThresholdEventDetail>;
+    'scanTripleCarencia': CustomEvent<ScanTripleCarenciaDetail>;
+    'tripleCarenciaResult': CustomEvent<TripleCarenciaResultDetail>;
   }
 }

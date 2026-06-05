@@ -3,55 +3,86 @@ import { datasets } from "../config/datasets";
 ---
 
 <aside class="panel sidebar">
-    <h2>Filtros y Búsqueda</h2>
+    <p class="panel-title">Buscar Lugar</p>
 
     <div class="form-group">
-        <label for="location-search">Buscar Distrito / Provincia</label>
+        <label for="location-search">Distrito / Provincia / Departamento</label>
         <div class="combobox-container">
             <input
                 type="text"
                 id="location-search"
-                placeholder="Ej. Trujillo, Miraflores..."
+                placeholder="Ej. Trujillo, Miraflores…"
                 autocomplete="off"
             />
             <ul id="location-results" class="dropdown-list hidden"></ul>
         </div>
-        <button id="btn-reset" class="btn-secondary btn-full-width"
-            >Vista Nacional</button
-        >
+        <div style="display:flex; gap:.4rem; margin-top:.5rem;">
+            <button id="btn-reset" class="btn btn-secondary btn-full">
+                🗺 Vista Nacional
+            </button>
+        </div>
     </div>
 
     <hr class="panel-divider" />
 
-    <div class="form-group">
-        <label>Capas de Servicios</label>
-        <p class="text-muted" style="font-size: 0.8rem; margin-top: 0;">
-            Activa las capas y haz clic en un Centro Poblado en el mapa para
-            calcular su accesibilidad.
-        </p>
-        <div id="dataset-checkboxes">
-            {
-                datasets.map((ds) => (
-                    <label class="checkbox-label">
-                        <input
-                            type="checkbox"
-                            value={ds.id}
-                            data-url={ds.url}
-                            data-name={ds.name}
-                            data-format={ds.format}
-                            data-geometry={ds.geometryType}
-                            data-color={ds.color}
-                            data-name-field={ds.nameField}
-                        />
-                        <span
-                            style={`display:inline-block; width:12px; height:12px; background-color:${ds.color}; border-radius:${ds.geometryType === "circle" ? "50%" : "2px"};`}
-                        />
-                        {ds.name}
-                    </label>
-                ))
-            }
-        </div>
+    <p class="panel-title">Capas de Servicios</p>
+    <p
+        class="text-muted"
+        style="font-size:.8rem; margin-bottom:.75rem; line-height:1.5;"
+    >
+        Activa las capas y haz clic en un Centro Poblado para calcular su
+        accesibilidad.
+    </p>
+
+    <div id="dataset-checkboxes">
+        {
+            datasets.map((ds) => (
+                <label class="layer-item" data-id={ds.id}>
+                    <input
+                        type="checkbox"
+                        value={ds.id}
+                        data-url={ds.url}
+                        data-name={ds.name}
+                        data-format={ds.format}
+                        data-geometry={ds.geometryType}
+                        data-color={ds.color}
+                        data-name-field={ds.nameField}
+                    />
+                    <span class="layer-dot" style={`background:${ds.color}`} />
+                    <span class="layer-name">{ds.name}</span>
+                </label>
+            ))
+        }
     </div>
+
+    <hr class="panel-divider" />
+
+    <p class="panel-title">Umbral de Carencia</p>
+    <p
+        class="text-muted"
+        style="font-size:.8rem; margin-bottom:.5rem; line-height:1.5;"
+    >
+        Distancia máxima en km para considerar que un servicio es accesible.
+    </p>
+    <div class="threshold-group" id="threshold-group">
+        <button class="threshold-btn" data-km="2">2 km</button>
+        <button class="threshold-btn active" data-km="5">5 km</button>
+        <button class="threshold-btn" data-km="10">10 km</button>
+    </div>
+
+    <hr class="panel-divider" />
+
+    <button id="btn-scan" class="btn btn-accent btn-full" style="display:none;">
+        🔍 Escanear Triple Carencia
+    </button>
+    <p
+        id="scan-hint"
+        class="text-muted"
+        style="font-size:.75rem; line-height:1.5; margin-top:.5rem;"
+    >
+        Activa las tres capas de servicios para habilitar el escaneo de zonas
+        con triple carencia.
+    </p>
 </aside>
 
 <script>
@@ -61,16 +92,16 @@ import { datasets } from "../config/datasets";
         ActiveDataset,
     } from "../types";
 
-    const checkboxes = document.querySelectorAll(
+    /* ── Checkboxes → datasetChanged ───────────────────────────────── */
+    const checkboxes = document.querySelectorAll<HTMLInputElement>(
         '#dataset-checkboxes input[type="checkbox"]',
     );
 
-    function updateDatasets() {
-        const activeDatasets: ActiveDataset[] = [];
-        checkboxes.forEach((cb) => {
-            const input = cb as HTMLInputElement;
+    function buildActiveDatasets(): ActiveDataset[] {
+        const out: ActiveDataset[] = [];
+        checkboxes.forEach((input) => {
             if (input.checked) {
-                activeDatasets.push({
+                out.push({
                     id: input.value,
                     url: input.getAttribute("data-url") || "",
                     name: input.getAttribute("data-name") || "",
@@ -86,18 +117,68 @@ import { datasets } from "../config/datasets";
                         input.getAttribute("data-name-field") || "nombre",
                 });
             }
+            // Visual active state on parent label
+            const label = input.closest(".layer-item") as HTMLElement;
+            if (label) label.classList.toggle("active", input.checked);
         });
+        return out;
+    }
 
+    function updateDatasets() {
+        const activeDatasets = buildActiveDatasets();
         window.dispatchEvent(
             new CustomEvent<DatasetEventDetail>("datasetChanged", {
                 detail: { activeDatasets },
             }),
         );
+        updateScanButton(activeDatasets);
     }
 
     checkboxes.forEach((cb) => cb.addEventListener("change", updateDatasets));
 
-    // todo: add search functionality
+    /* ── Scan button visibility ─────────────────────────────────────── */
+    const btnScan = document.getElementById("btn-scan") as HTMLButtonElement;
+    const scanHint = document.getElementById(
+        "scan-hint",
+    ) as HTMLParagraphElement;
+    const SERVICE_IDS = ["salud", "educacion", "comisarias"];
+
+    function updateScanButton(active: ActiveDataset[]) {
+        const activeIds = active.map((d) => d.id);
+        const hasCPs = activeIds.includes("centros-poblados");
+        const hasServices = SERVICE_IDS.every((id) => activeIds.includes(id));
+        const canScan = hasCPs && hasServices;
+        btnScan.style.display = canScan ? "flex" : "none";
+        scanHint.style.display = canScan ? "none" : "block";
+    }
+
+    btnScan.addEventListener("click", () => {
+        window.dispatchEvent(
+            new CustomEvent("scanTripleCarencia", {
+                detail: { thresholdKm: currentThreshold },
+            }),
+        );
+    });
+
+    /* ── Threshold selector ─────────────────────────────────────────── */
+    let currentThreshold = 5;
+    const thresholdBtns =
+        document.querySelectorAll<HTMLButtonElement>(".threshold-btn");
+
+    thresholdBtns.forEach((btn) => {
+        btn.addEventListener("click", () => {
+            thresholdBtns.forEach((b) => b.classList.remove("active"));
+            btn.classList.add("active");
+            currentThreshold = parseInt(btn.dataset.km || "5");
+            window.dispatchEvent(
+                new CustomEvent("thresholdChanged", {
+                    detail: { thresholdKm: currentThreshold },
+                }),
+            );
+        });
+    });
+
+    /* ── Location search via Nominatim ──────────────────────────────── */
     const searchInput = document.getElementById(
         "location-search",
     ) as HTMLInputElement;
@@ -106,67 +187,81 @@ import { datasets } from "../config/datasets";
     ) as HTMLUListElement;
     const btnReset = document.getElementById("btn-reset") as HTMLButtonElement;
 
-    const locationsDB = [
-        {
-            name: "Trujillo",
-            type: "Provincia",
-            lat: -8.1091,
-            lng: -79.0215,
-            zoom: 10,
-        },
-        {
-            name: "Huamachuco",
-            type: "Distrito",
-            lat: -7.8144,
-            lng: -78.0489,
-            zoom: 12,
-        },
-        {
-            name: "Lima",
-            type: "Departamento",
-            lat: -12.0464,
-            lng: -77.0428,
-            zoom: 8,
-        },
-    ];
+    let searchTimeout: ReturnType<typeof setTimeout>;
 
-    searchInput.addEventListener("input", (e) => {
-        const query = (e.target as HTMLInputElement).value.toLowerCase();
-        resultsList.innerHTML = "";
-        if (!query) {
+    searchInput.addEventListener("input", () => {
+        clearTimeout(searchTimeout);
+        const query = searchInput.value.trim();
+
+        if (!query || query.length < 3) {
+            resultsList.innerHTML = "";
             resultsList.classList.add("hidden");
             return;
         }
 
-        const filtered = locationsDB.filter((loc) =>
-            loc.name.toLowerCase().includes(query),
-        );
-        if (filtered.length > 0) {
-            resultsList.classList.remove("hidden");
-            filtered.forEach((loc) => {
-                const li = document.createElement("li");
-                li.innerHTML = `<strong>${loc.name}</strong> <small class="text-muted">(${loc.type})</small>`;
-                li.addEventListener("click", () => {
-                    searchInput.value = loc.name;
-                    resultsList.classList.add("hidden");
-                    window.dispatchEvent(
-                        new CustomEvent<LocationEventDetail>(
-                            "locationChanged",
-                            {
-                                detail: {
-                                    lat: loc.lat,
-                                    lng: loc.lng,
-                                    zoom: loc.zoom,
-                                    name: loc.name,
-                                    level: loc.type,
-                                },
-                            },
-                        ),
-                    );
+        searchTimeout = setTimeout(async () => {
+            try {
+                const params = new URLSearchParams({
+                    q: `${query}, Perú`,
+                    format: "json",
+                    limit: "7",
+                    countrycodes: "pe",
+                    "accept-language": "es",
                 });
-                resultsList.appendChild(li);
-            });
-        } else {
+                const res = await fetch(
+                    `https://nominatim.openstreetmap.org/search?${params}`,
+                    {
+                        headers: {
+                            "User-Agent": "GeoTon-AccessibilityApp/1.0",
+                        },
+                    },
+                );
+                const results = await res.json();
+
+                resultsList.innerHTML = "";
+                if (!results.length) {
+                    resultsList.classList.add("hidden");
+                    return;
+                }
+
+                results.forEach((loc: any) => {
+                    const li = document.createElement("li");
+                    const shortName = loc.display_name.split(",")[0];
+                    const typeLabel = loc.type ?? loc.addresstype ?? "lugar";
+                    li.innerHTML = `<span>${shortName}</span><span class="loc-type">${typeLabel}</span>`;
+                    li.addEventListener("click", () => {
+                        searchInput.value = shortName;
+                        resultsList.classList.add("hidden");
+                        window.dispatchEvent(
+                            new CustomEvent<LocationEventDetail>(
+                                "locationChanged",
+                                {
+                                    detail: {
+                                        lat: parseFloat(loc.lat),
+                                        lng: parseFloat(loc.lon),
+                                        zoom: 10,
+                                        name: shortName,
+                                        level: typeLabel,
+                                    },
+                                },
+                            ),
+                        );
+                    });
+                    resultsList.appendChild(li);
+                });
+
+                resultsList.classList.remove("hidden");
+            } catch {
+                resultsList.classList.add("hidden");
+            }
+        }, 350);
+    });
+
+    document.addEventListener("click", (e) => {
+        if (
+            !searchInput.contains(e.target as Node) &&
+            !resultsList.contains(e.target as Node)
+        ) {
             resultsList.classList.add("hidden");
         }
     });

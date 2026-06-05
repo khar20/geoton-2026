@@ -1,5 +1,33 @@
 <div id="map" class="map-container">
-    <div id="map-loader" class="map-loader hidden">Cargando datos...</div>
+    <div id="map-loader" class="map-loader hidden">Cargando datos…</div>
+
+    <!-- Map legend (built dynamically) -->
+    <div id="map-legend" class="map-legend hidden">
+        <div class="map-legend-title">Leyenda</div>
+        <div id="legend-rows"></div>
+        <div
+            style="margin-top:.4rem; border-top:1px solid var(--border); padding-top:.4rem;"
+        >
+            <div class="legend-row">
+                <span
+                    style="width:18px; height:3px; background:#e67e22; border-radius:2px; flex-shrink:0;"
+                ></span>
+                <span>Radio de análisis</span>
+            </div>
+            <div class="legend-row">
+                <span
+                    style="width:10px; height:10px; background:var(--accent-2); border-radius:50%; flex-shrink:0;"
+                ></span>
+                <span>CP seleccionado</span>
+            </div>
+            <div class="legend-row">
+                <span
+                    style="width:10px; height:10px; background:#c0392b; border-radius:50%; flex-shrink:0;"
+                ></span>
+                <span>Triple carencia</span>
+            </div>
+        </div>
+    </div>
 </div>
 
 <script>
@@ -13,26 +41,40 @@
         ActiveDataset,
     } from "../types";
 
+    /* ── Map init ─────────────────────────────────────────────────────── */
     const map = new maplibregl.Map({
         container: "map",
         style: "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json",
         center: [-75.0152, -9.19],
         zoom: 5,
+        attributionControl: false,
     });
 
+    map.addControl(
+        new maplibregl.AttributionControl({ compact: true }),
+        "bottom-left",
+    );
+    map.addControl(
+        new maplibregl.NavigationControl({ showCompass: false }),
+        "top-left",
+    );
+
     let activeLayerIds: string[] = [];
-    let currentActiveDatasets: ActiveDataset[] = []; // Guardamos la config actual
+    let currentActiveDatasets: ActiveDataset[] = [];
+    let currentThresholdKm = 5;
+
     const loader = document.getElementById("map-loader") as HTMLDivElement;
+    const legendEl = document.getElementById("map-legend") as HTMLDivElement;
+    const legendRows = document.getElementById("legend-rows") as HTMLDivElement;
     const geojsonCache = new Map<string, any>();
 
+    /* ── Map load: add permanent sources/layers ──────────────────────── */
     map.on("load", () => {
-        // Capa para el radio de 5km y líneas de conexión
+        // Analysis overlay (radius polygon + connector lines)
         map.addSource("analysis-source", {
             type: "geojson",
             data: { type: "FeatureCollection", features: [] },
         });
-
-        // Polígono del radio (5km)
         map.addLayer({
             id: "analysis-radius",
             type: "fill",
@@ -40,25 +82,23 @@
             filter: ["==", "$type", "Polygon"],
             paint: {
                 "fill-color": "#f39c12",
-                "fill-opacity": 0.15,
+                "fill-opacity": 0.12,
                 "fill-outline-color": "#e67e22",
             },
         });
-
-        // Líneas punteadas hacia los servicios
         map.addLayer({
             id: "analysis-lines",
             type: "line",
             source: "analysis-source",
             filter: ["==", "$type", "LineString"],
             paint: {
-                "line-color": ["get", "color"], // Toma el color de las propiedades del GeoJSON
+                "line-color": ["get", "color"],
                 "line-width": 2,
                 "line-dasharray": [2, 2],
             },
         });
 
-        // Capa de resaltado del Centro Poblado
+        // Highlighted selected CP
         map.addSource("highlight-source", {
             type: "geojson",
             data: { type: "FeatureCollection", features: [] },
@@ -68,14 +108,41 @@
             type: "circle",
             source: "highlight-source",
             paint: {
-                "circle-radius": 8,
+                "circle-radius": 9,
                 "circle-color": "#f1c40f",
-                "circle-stroke-width": 2,
+                "circle-stroke-width": 2.5,
                 "circle-stroke-color": "#000",
+            },
+        });
+
+        // Triple-carencia overlay (red circles on CPs with triple deprivation)
+        map.addSource("carencia-source", {
+            type: "geojson",
+            data: { type: "FeatureCollection", features: [] },
+        });
+        map.addLayer({
+            id: "carencia-layer",
+            type: "circle",
+            source: "carencia-source",
+            paint: {
+                "circle-radius": 6,
+                "circle-color": "#c0392b",
+                "circle-opacity": 0.85,
+                "circle-stroke-width": 1.5,
+                "circle-stroke-color": "#fff",
             },
         });
     });
 
+    /* ── Threshold changes ────────────────────────────────────────────── */
+    window.addEventListener(
+        "thresholdChanged",
+        (e: CustomEvent<{ thresholdKm: number }>) => {
+            currentThresholdKm = e.detail.thresholdKm;
+        },
+    );
+
+    /* ── Dataset toggle → load/unload layers ─────────────────────────── */
     window.addEventListener(
         "datasetChanged",
         async (e: CustomEvent<DatasetEventDetail>) => {
@@ -84,220 +151,295 @@
                 (ds) => `layer-${ds.id}`,
             );
 
-            // Limpiar capas inactivas
+            // Remove inactive layers
             activeLayerIds.forEach((id) => {
                 if (!newLayerIds.includes(id)) {
                     if (map.getLayer(id)) map.removeLayer(id);
-                    const sourceId = id.replace("layer-", "source-");
-                    if (map.getSource(sourceId)) map.removeSource(sourceId);
-                    geojsonCache.delete(id.replace("layer-", ""));
+                    const srcId = id.replace("layer-", "source-");
+                    if (map.getSource(srcId)) map.removeSource(srcId);
                 }
             });
 
-            // Limpiar análisis previo si se cambian las capas
+            // Clear analysis overlays
             (
                 map.getSource("analysis-source") as maplibregl.GeoJSONSource
             )?.setData({ type: "FeatureCollection", features: [] });
+            (
+                map.getSource("carencia-source") as maplibregl.GeoJSONSource
+            )?.setData({ type: "FeatureCollection", features: [] });
+
+            // Rebuild legend
+            rebuildLegend();
 
             for (const ds of currentActiveDatasets) {
-                const sourceId = `source-${ds.id}`;
+                const srcId = `source-${ds.id}`;
                 const layerId = `layer-${ds.id}`;
 
-                if (!map.getSource(sourceId)) {
-                    loader.classList.remove("hidden");
-                    try {
-                        let geojsonData: any;
-                        if (ds.format === "shapefile") {
-                            geojsonData = await shp(ds.url);
-                        } else if (ds.format === "geojson") {
-                            const response = await fetch(ds.url);
-                            geojsonData = await response.json();
-                        }
+                if (map.getSource(srcId)) continue; // Already loaded
 
-                        geojsonCache.set(ds.id, geojsonData);
-                        map.addSource(sourceId, {
-                            type: "geojson",
-                            data: geojsonData,
-                        });
-
-                        map.addLayer({
-                            id: layerId,
-                            type: ds.geometryType,
-                            source: sourceId,
-                            paint: {
-                                "circle-color": ds.color,
-                                "circle-radius":
-                                    ds.id === "centros-poblados" ? 5 : 4,
-                                "circle-stroke-width": 1,
-                                "circle-stroke-color": "#ffffff",
-                            },
-                        });
-
-                        // LÓGICA AL HACER CLIC EN UN CENTRO POBLADO
-                        if (ds.id === "centros-poblados") {
-                            map.on("click", layerId, (e) => {
-                                if (!e.features || e.features.length === 0)
-                                    return;
-                                const feature = e.features[0];
-
-                                // Resaltar CP
-                                (
-                                    map.getSource(
-                                        "highlight-source",
-                                    ) as maplibregl.GeoJSONSource
-                                ).setData(feature.geometry);
-
-                                // Extraer coordenadas de forma segura (Point, MultiPoint o GeometryCollection)
-                                let coordinates: any;
-                                const geom = feature.geometry;
-                                if (geom.type === "Point") {
-                                    coordinates = (geom as any).coordinates;
-                                } else if (geom.type === "MultiPoint") {
-                                    coordinates = (geom as any).coordinates[0];
-                                } else if (geom.type === "GeometryCollection") {
-                                    const coll = geom as any;
-                                    const firstPoint = coll.geometries?.find(
-                                        (g: any) => g.type === "Point",
-                                    );
-                                    coordinates = firstPoint?.coordinates;
-                                }
-                                if (!coordinates) return;
-
-                                const targetPoint = turf.point(
-                                    coordinates as [number, number],
-                                );
-                                const analysisFeatures: any[] = [];
-
-                                // 1. Dibujar Radio de 5km
-                                const radiusPoly = turf.circle(targetPoint, 5, {
-                                    units: "kilometers",
-                                });
-                                analysisFeatures.push(radiusPoly);
-
-                                // 2. Función para calcular servicio más cercano y crear línea
-                                const calcNearest = (datasetId: string) => {
-                                    const config = currentActiveDatasets.find(
-                                        (d) => d.id === datasetId,
-                                    );
-                                    if (!config) return null; // Capa no está activa
-
-                                    const data = geojsonCache.get(datasetId);
-                                    if (
-                                        !data ||
-                                        !data.features ||
-                                        data.features.length === 0
-                                    )
-                                        return null;
-
-                                    const nearest = turf.nearestPoint(
-                                        targetPoint,
-                                        data,
-                                    );
-                                    const distance = turf.distance(
-                                        targetPoint,
-                                        nearest,
-                                        { units: "kilometers" },
-                                    );
-
-                                    // USO DEL DICCIONARIO ESCALABLE (nameField)
-                                    const name =
-                                        nearest.properties?.[
-                                            config.nameField
-                                        ] || "Desconocido";
-
-                                    // Crear línea desde CP hasta el servicio
-                                    const line = turf.lineString(
-                                        [
-                                            targetPoint.geometry.coordinates,
-                                            nearest.geometry.coordinates,
-                                        ],
-                                        { color: config.color }, // Pasamos el color para pintarlo dinámicamente
-                                    );
-                                    analysisFeatures.push(line);
-
-                                    return { distance, name };
-                                };
-
-                                const salud = calcNearest("salud");
-                                const educacion = calcNearest("educacion");
-                                const comisaria = calcNearest("comisarias");
-
-                                const cpConfig = currentActiveDatasets.find(
-                                    (d) => d.id === "centros-poblados",
-                                );
-                                const cpName =
-                                    feature.properties?.[
-                                        cpConfig?.nameField || "nombre"
-                                    ] || "Centro Poblado";
-
-                                const tripleCarencia =
-                                    salud?.distance > 5 &&
-                                    educacion?.distance > 5 &&
-                                    comisaria?.distance > 5;
-
-                                // 3. Actualizar mapa con el radio y las líneas
-                                const fc =
-                                    turf.featureCollection(analysisFeatures);
-                                (
-                                    map.getSource(
-                                        "analysis-source",
-                                    ) as maplibregl.GeoJSONSource
-                                ).setData(fc);
-
-                                // ZOOM AUTOMÁTICO (FitBounds)
-                                const bbox = turf.bbox(fc);
-                                map.fitBounds(
-                                    bbox as [number, number, number, number],
-                                    {
-                                        padding: 60, // Margen en píxeles
-                                        maxZoom: 14, // Evitar zoom excesivo si todo está muy cerca
-                                        duration: 1500, // Animación suave
-                                    },
-                                );
-
-                                // Enviar datos al panel
-                                window.dispatchEvent(
-                                    new CustomEvent<AccessibilityStats>(
-                                        "accessibilityCalculated",
-                                        {
-                                            detail: {
-                                                centroPoblado: cpName,
-                                                salud,
-                                                educacion,
-                                                comisaria,
-                                                tripleCarencia,
-                                            },
-                                        },
-                                    ),
-                                );
-                            });
-
-                            map.on("mouseenter", layerId, () => {
-                                map.getCanvas().style.cursor = "pointer";
-                            });
-                            map.on("mouseleave", layerId, () => {
-                                map.getCanvas().style.cursor = "";
-                            });
-                        }
-                    } catch (error) {
-                        console.error(
-                            `Error loading dataset ${ds.name}:`,
-                            error,
-                        );
-                    } finally {
-                        loader.classList.add("hidden");
+                loader.classList.remove("hidden");
+                try {
+                    let geojsonData: any;
+                    if (ds.format === "shapefile") {
+                        geojsonData = await shp(ds.url);
+                    } else {
+                        const res = await fetch(ds.url);
+                        geojsonData = await res.json();
                     }
+
+                    geojsonCache.set(ds.id, geojsonData);
+                    map.addSource(srcId, {
+                        type: "geojson",
+                        data: geojsonData,
+                    });
+
+                    const isCP = ds.id === "centros-poblados";
+                    map.addLayer({
+                        id: layerId,
+                        type: ds.geometryType,
+                        source: srcId,
+                        paint: {
+                            "circle-color": ds.color,
+                            "circle-radius": isCP ? 5 : 4,
+                            "circle-stroke-width": 1,
+                            "circle-stroke-color": "#ffffff",
+                            "circle-opacity": isCP ? 0.75 : 0.9,
+                        },
+                    } as any);
+
+                    if (isCP) {
+                        map.on("click", layerId, handleCPClick);
+                        map.on("mouseenter", layerId, () => {
+                            map.getCanvas().style.cursor = "pointer";
+                        });
+                        map.on("mouseleave", layerId, () => {
+                            map.getCanvas().style.cursor = "";
+                        });
+                    }
+                } catch (err) {
+                    console.error(`Error loading ${ds.name}:`, err);
+                } finally {
+                    loader.classList.add("hidden");
                 }
             }
+
             activeLayerIds = newLayerIds;
         },
     );
 
+    /* ── CP click: calculate nearest services ────────────────────────── */
+    function handleCPClick(
+        e: maplibregl.MapMouseEvent & {
+            features?: maplibregl.MapGeoJSONFeature[];
+        },
+    ) {
+        if (!e.features?.length) return;
+        const feature = e.features[0];
+
+        // Highlight
+        (map.getSource("highlight-source") as maplibregl.GeoJSONSource).setData(
+            {
+                type: "FeatureCollection",
+                features: [feature],
+            },
+        );
+
+        // Resolve coordinates
+        const coordinates = extractCoords(feature.geometry);
+        if (!coordinates) return;
+
+        const targetPoint = turf.point(coordinates as [number, number]);
+        const analysisFeatures: any[] = [];
+
+        // Radius circle (dynamic threshold)
+        const radiusPoly = turf.circle(targetPoint, currentThresholdKm, {
+            units: "kilometers",
+        });
+        analysisFeatures.push(radiusPoly);
+
+        const calcNearest = (datasetId: string) => {
+            const cfg = currentActiveDatasets.find((d) => d.id === datasetId);
+            if (!cfg) return null;
+            const data = geojsonCache.get(datasetId);
+            if (!data?.features?.length) return null;
+
+            const nearest = turf.nearestPoint(targetPoint, data);
+            const distance = turf.distance(targetPoint, nearest, {
+                units: "kilometers",
+            });
+            const name = nearest.properties?.[cfg.nameField] || "Desconocido";
+
+            // Connector line
+            analysisFeatures.push(
+                turf.lineString(
+                    [
+                        targetPoint.geometry.coordinates,
+                        nearest.geometry.coordinates,
+                    ],
+                    { color: cfg.color },
+                ),
+            );
+            return { distance, name };
+        };
+
+        const salud = calcNearest("salud");
+        const educacion = calcNearest("educacion");
+        const comisaria = calcNearest("comisarias");
+
+        const cpCfg = currentActiveDatasets.find(
+            (d) => d.id === "centros-poblados",
+        );
+        const cpName =
+            feature.properties?.[cpCfg?.nameField || "nombccpp"] ||
+            "Centro Poblado";
+
+        const tripleCarencia =
+            (salud == null || salud.distance > currentThresholdKm) &&
+            (educacion == null || educacion.distance > currentThresholdKm) &&
+            (comisaria == null || comisaria.distance > currentThresholdKm);
+
+        // Update map
+        const fc = turf.featureCollection(analysisFeatures);
+        (map.getSource("analysis-source") as maplibregl.GeoJSONSource).setData(
+            fc,
+        );
+
+        const bbox = turf.bbox(fc);
+        map.fitBounds(bbox as [number, number, number, number], {
+            padding: 60,
+            maxZoom: 13,
+            duration: 1200,
+        });
+
+        // Dispatch to panel
+        window.dispatchEvent(
+            new CustomEvent<AccessibilityStats>("accessibilityCalculated", {
+                detail: {
+                    centroPoblado: cpName,
+                    salud,
+                    educacion,
+                    comisaria,
+                    tripleCarencia,
+                    coords: coordinates as [number, number],
+                },
+            }),
+        );
+    }
+
+    /* ── Triple-carencia scan ─────────────────────────────────────────── */
+    window.addEventListener(
+        "scanTripleCarencia",
+        (e: CustomEvent<{ thresholdKm: number }>) => {
+            const threshold = e.detail.thresholdKm;
+
+            const cpData = geojsonCache.get("centros-poblados");
+            if (!cpData?.features?.length) return;
+
+            const saludData = geojsonCache.get("salud");
+            const educacionData = geojsonCache.get("educacion");
+            const comisariaData = geojsonCache.get("comisarias");
+
+            if (!saludData || !educacionData || !comisariaData) return;
+
+            loader.classList.remove("hidden");
+
+            // Run in a setTimeout to allow UI to update before heavy compute
+            setTimeout(() => {
+                const carenciaFeatures: any[] = [];
+                let total = 0;
+
+                for (const cp of cpData.features) {
+                    const coords = extractCoords(cp.geometry);
+                    if (!coords) continue;
+                    total++;
+
+                    const pt = turf.point(coords as [number, number]);
+                    const dSalud = turf.distance(
+                        pt,
+                        turf.nearestPoint(pt, saludData),
+                        { units: "kilometers" },
+                    );
+                    const dEducacion = turf.distance(
+                        pt,
+                        turf.nearestPoint(pt, educacionData),
+                        { units: "kilometers" },
+                    );
+                    const dComisaria = turf.distance(
+                        pt,
+                        turf.nearestPoint(pt, comisariaData),
+                        { units: "kilometers" },
+                    );
+
+                    if (
+                        dSalud > threshold &&
+                        dEducacion > threshold &&
+                        dComisaria > threshold
+                    ) {
+                        carenciaFeatures.push(cp);
+                    }
+                }
+
+                const fc = turf.featureCollection(carenciaFeatures);
+                (
+                    map.getSource("carencia-source") as maplibregl.GeoJSONSource
+                ).setData(fc);
+
+                loader.classList.add("hidden");
+
+                window.dispatchEvent(
+                    new CustomEvent("tripleCarenciaResult", {
+                        detail: {
+                            count: carenciaFeatures.length,
+                            total,
+                            thresholdKm: threshold,
+                        },
+                    }),
+                );
+            }, 50);
+        },
+    );
+
+    /* ── Location fly-to ──────────────────────────────────────────────── */
     window.addEventListener(
         "locationChanged",
         (e: CustomEvent<LocationEventDetail>) => {
             const { lat, lng, zoom } = e.detail;
-            map.flyTo({ center: [lng, lat], zoom: zoom, essential: true });
+            map.flyTo({
+                center: [lng, lat],
+                zoom,
+                essential: true,
+                duration: 1400,
+            });
         },
     );
+
+    /* ── Legend helper ────────────────────────────────────────────────── */
+    function rebuildLegend() {
+        legendRows.innerHTML = "";
+        if (!currentActiveDatasets.length) {
+            legendEl.classList.add("hidden");
+            return;
+        }
+        legendEl.classList.remove("hidden");
+        currentActiveDatasets.forEach((ds) => {
+            const row = document.createElement("div");
+            row.className = "legend-row";
+            row.innerHTML = `
+        <span class="legend-dot" style="background:${ds.color}"></span>
+        <span>${ds.name}</span>
+      `;
+            legendRows.appendChild(row);
+        });
+    }
+
+    /* ── Utility: extract [lng, lat] from any geometry ───────────────── */
+    function extractCoords(geom: any): number[] | null {
+        if (geom.type === "Point") return geom.coordinates;
+        if (geom.type === "MultiPoint") return geom.coordinates[0];
+        if (geom.type === "GeometryCollection") {
+            const pt = geom.geometries?.find((g: any) => g.type === "Point");
+            return pt?.coordinates ?? null;
+        }
+        return null;
+    }
 </script>

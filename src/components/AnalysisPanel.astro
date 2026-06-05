@@ -3,151 +3,388 @@
 ---
 
 <aside class="panel analysis-panel">
-    <h2>Análisis de Accesibilidad</h2>
+    <p class="panel-title">Calculadora de Accesibilidad</p>
 
     <div id="analysis-content">
-        <p><strong>Área Actual:</strong> <span id="lbl-area">Perú</span></p>
-        <p class="text-muted" style="font-size: 0.85rem;">
-            Selecciona un Centro Poblado en el mapa para analizar su acceso a
-            servicios esenciales.
-        </p>
-
-        <hr class="panel-divider" />
-
-        <div id="stats-container">
-            <div style="text-align: center; padding: 2rem 0; color: #999;">
-                <i>Esperando selección...</i>
-            </div>
+        <div id="analysis-empty" class="analysis-empty">
+            <div class="empty-icon">📍</div>
+            <p>
+                Haz clic en cualquier <strong>Centro Poblado</strong> del mapa para
+                ver a qué distancia se encuentran los servicios esenciales más cercanos.
+            </p>
         </div>
+
+        <div id="analysis-result" class="hidden">
+            <!-- populated by JS -->
+        </div>
+    </div>
+
+    <!-- Scan results summary -->
+    <div id="scan-result" class="hidden" style="margin-top:.75rem;">
+        <hr class="panel-divider" />
+        <p class="panel-title">Escaneo de Triple Carencia</p>
+        <div id="scan-summary"></div>
     </div>
 </aside>
 
 <style>
-    .carencia-alert {
-        background-color: #ffeaa7;
-        border-left: 4px solid #d35400;
-        padding: 1rem;
-        margin-bottom: 1rem;
-        border-radius: 4px;
+    /* Colour bands on score ring */
+    .ring-good {
+        --ring-color: #27ae60;
     }
-    .carencia-alert h4 {
-        margin: 0 0 0.5rem 0;
-        color: #d35400;
+    .ring-warn {
+        --ring-color: #f39c12;
     }
-    .carencia-alert p {
-        margin: 0;
-        font-size: 0.9rem;
-        color: #555;
+    .ring-bad {
+        --ring-color: #e74c3c;
     }
 
-    .service-card {
-        background: #f8f9fa;
-        padding: 1rem;
-        border-radius: 6px;
-        margin-bottom: 0.75rem;
-        border: 1px solid var(--border-color);
+    svg.score-ring circle.track {
+        stroke: rgba(255, 255, 255, 0.15);
+    }
+    svg.score-ring circle.fill {
+        stroke: var(--ring-color, #27ae60);
+        transition: stroke-dasharray 0.6s ease;
+    }
+
+    .carencia-chips {
         display: flex;
-        justify-content: space-between;
-        align-items: center;
+        flex-wrap: wrap;
+        gap: 0.35rem;
+        margin-top: 0.5rem;
     }
-    .service-info h4 {
-        margin: 0 0 0.25rem 0;
-        font-size: 1rem;
+    .chip {
+        font-size: 0.7rem;
+        font-family: var(--font-mono);
+        padding: 0.2rem 0.55rem;
+        border-radius: 20px;
+        border: 1px solid currentColor;
     }
-    .service-info p {
-        margin: 0;
+    .chip-bad {
+        color: var(--danger);
+        background: rgba(231, 76, 60, 0.08);
+    }
+    .chip-warn {
+        color: var(--warn);
+        background: rgba(243, 156, 18, 0.08);
+    }
+    .chip-good {
+        color: var(--safe);
+        background: rgba(39, 174, 96, 0.08);
+    }
+
+    .scan-count {
+        font-family: var(--font-display);
+        font-size: 2rem;
+        font-weight: 800;
+        color: var(--danger);
+        line-height: 1;
+        display: block;
+    }
+
+    .scan-subtitle {
         font-size: 0.8rem;
-        color: #666;
-    }
-    .service-dist {
-        font-size: 1.25rem;
-        font-weight: bold;
-    }
-    .dist-good {
-        color: #27ae60;
-    }
-    .dist-warn {
-        color: #f39c12;
-    }
-    .dist-bad {
-        color: #c0392b;
+        color: var(--text-muted);
+        margin-top: 0.2rem;
     }
 </style>
 
 <script>
     import type { LocationEventDetail, AccessibilityStats } from "../types";
 
-    const lblArea = document.getElementById("lbl-area") as HTMLSpanElement;
-    const statsContainer = document.getElementById(
-        "stats-container",
+    const emptyEl = document.getElementById("analysis-empty") as HTMLDivElement;
+    const resultEl = document.getElementById(
+        "analysis-result",
+    ) as HTMLDivElement;
+    const scanResultEl = document.getElementById(
+        "scan-result",
+    ) as HTMLDivElement;
+    const scanSummaryEl = document.getElementById(
+        "scan-summary",
     ) as HTMLDivElement;
 
+    /* ── helpers ─────────────────────────────────────────────────────── */
+    let currentThreshold = 5;
+
     window.addEventListener(
-        "locationChanged",
-        (e: CustomEvent<LocationEventDetail>) => {
-            lblArea.textContent = e.detail.name;
+        "thresholdChanged",
+        (e: CustomEvent<{ thresholdKm: number }>) => {
+            currentThreshold = e.detail.thresholdKm;
         },
     );
+
+    function distClass(km: number): string {
+        if (km <= 2) return "dist-good";
+        if (km <= currentThreshold) return "dist-warn";
+        return "dist-bad";
+    }
+
+    function statusClass(km: number): string {
+        if (km <= 2) return "status-good";
+        if (km <= currentThreshold) return "status-warn";
+        return "status-bad";
+    }
+
+    function walkMinutes(km: number): string {
+        // 5 km/h walking
+        const mins = Math.round((km / 5) * 60);
+        if (mins < 60) return `${mins} min a pie`;
+        const h = Math.floor(mins / 60);
+        const m = mins % 60;
+        return `${h}h ${m}min a pie`;
+    }
+
+    function driveMinutes(km: number): string {
+        // ~40 km/h rural average
+        const mins = Math.round((km / 40) * 60);
+        if (mins < 2) return "< 2 min en vehículo";
+        if (mins < 60) return `${mins} min en vehículo`;
+        const h = Math.floor(mins / 60);
+        const m = mins % 60;
+        return `${h}h ${m}min en vehículo`;
+    }
+
+    function accessScore(services: Array<{ distance: number } | null>): number {
+        // Score 0–100 based on average inverse distance (capped at threshold)
+        const active = services.filter(Boolean) as Array<{ distance: number }>;
+        if (!active.length) return 0;
+        const scores = active.map((s) => {
+            const ratio = Math.min(s.distance / currentThreshold, 1);
+            return Math.round((1 - ratio) * 100);
+        });
+        return Math.round(scores.reduce((a, b) => a + b, 0) / scores.length);
+    }
+
+    function renderService(
+        emoji: string,
+        title: string,
+        svc: { distance: number; name: string } | null,
+        color: string,
+    ): string {
+        if (!svc) {
+            return `
+        <div class="service-card status-na">
+          <span class="service-icon" style="opacity:.4">${emoji}</span>
+          <div class="service-body">
+            <div class="service-title" style="color:${color}">${title}</div>
+            <div class="service-name">Capa no activa</div>
+          </div>
+          <div class="service-metrics">
+            <div class="service-dist text-muted">-- km</div>
+          </div>
+        </div>`;
+        }
+        const dist = svc.distance;
+        const dc = distClass(dist);
+        const sc = statusClass(dist);
+        const shortName =
+            svc.name.length > 28 ? svc.name.substring(0, 28) + "…" : svc.name;
+        return `
+      <div class="service-card ${sc}">
+        <span class="service-icon">${emoji}</span>
+        <div class="service-body">
+          <div class="service-title" style="color:${color}">${title}</div>
+          <div class="service-name" title="${svc.name}">${shortName}</div>
+        </div>
+        <div class="service-metrics">
+          <div class="service-dist ${dc}">${dist.toFixed(1)} km</div>
+          <div class="service-time">${walkMinutes(dist)}</div>
+          <div class="service-time">${driveMinutes(dist)}</div>
+        </div>
+      </div>`;
+    }
+
+    function buildScoreRingSVG(score: number): string {
+        const r = 26;
+        const circ = 2 * Math.PI * r;
+        const filled = (score / 100) * circ;
+        const bandClass =
+            score >= 60 ? "ring-good" : score >= 30 ? "ring-warn" : "ring-bad";
+        return `
+      <svg class="score-ring ${bandClass}" width="68" height="68" viewBox="0 0 68 68">
+        <circle class="track" cx="34" cy="34" r="${r}" fill="none" stroke-width="7"/>
+        <circle class="fill"  cx="34" cy="34" r="${r}" fill="none" stroke-width="7"
+          stroke-linecap="round"
+          stroke-dasharray="${filled} ${circ}"
+          transform="rotate(-90 34 34)"/>
+        <text x="34" y="38" text-anchor="middle"
+          font-family="'Syne',sans-serif" font-size="14" font-weight="800" fill="white">
+          ${score}
+        </text>
+      </svg>`;
+    }
+
+    /* ── main event ───────────────────────────────────────────────────── */
+    let lastData: AccessibilityStats | null = null;
 
     window.addEventListener(
         "accessibilityCalculated",
         (e: CustomEvent<AccessibilityStats>) => {
-            const data = e.detail;
-
-            let html = `<h3 style="margin-top:0; color: var(--primary-color);">${data.centroPoblado}</h3>`;
-
-            if (data.tripleCarencia) {
-                html += `
-          <div class="carencia-alert">
-            <h4>⚠️ Zona de Triple Carencia</h4>
-            <p>Este centro poblado se encuentra a más de 5km de distancia de salud, educación y seguridad.</p>
-          </div>
-        `;
-            }
-
-            const renderService = (
-                title: string,
-                serviceData: { distance: number; name: string } | null,
-                color: string,
-            ) => {
-                if (!serviceData) {
-                    return `
-                    <div class="service-card">
-                      <div class="service-info">
-                        <h4 style="color: ${color}">${title}</h4>
-                        <p>Capa no activa o sin datos</p>
-                      </div>
-                      <div class="service-dist text-muted">-- km</div>
-                    </div>
-                    `;
-                }
-
-                const dist = serviceData.distance;
-                let distClass = "dist-good";
-                if (dist > 2) distClass = "dist-warn";
-                if (dist > 5) distClass = "dist-bad";
-
-                return `
-                <div class="service-card">
-                  <div class="service-info">
-                    <h4 style="color: ${color}">${title}</h4>
-                    <p title="${serviceData.name}">${serviceData.name.length > 25 ? serviceData.name.substring(0, 25) + "..." : serviceData.name}</p>
-                  </div>
-                  <div class="service-dist ${distClass}">${dist.toFixed(1)} km</div>
-                </div>
-                `;
-            };
-
-            html += renderService("🏥 Salud", data.salud, "#e74c3c");
-            html += renderService("🏫 Educación", data.educacion, "#3498db");
-            html += renderService("👮 Comisaría", data.comisaria, "#2ecc71");
-
-            // walking eta (5 km/h)
-            if (data.salud || data.educacion || data.comisaria) {
-                html += `<p class="text-muted" style="font-size:0.8rem; margin-top:1rem;">* Distancia en línea recta. Tiempo estimado a pie: ~12 min por km.</p>`;
-            }
-
-            statsContainer.innerHTML = html;
+            lastData = e.detail;
+            renderResult(e.detail);
         },
     );
+
+    function renderResult(data: AccessibilityStats) {
+        const { salud, educacion, comisaria } = data;
+        const score = accessScore([salud, educacion, comisaria]);
+        const scoreLabel =
+            score >= 70
+                ? "Buena accesibilidad"
+                : score >= 40
+                  ? "Accesibilidad limitada"
+                  : "Carencia severa";
+
+        // Carencia chips
+        const chips: string[] = [];
+        if (!salud || salud.distance > currentThreshold)
+            chips.push(`<span class="chip chip-bad">Sin salud cercana</span>`);
+        if (!educacion || educacion.distance > currentThreshold)
+            chips.push(
+                `<span class="chip chip-bad">Sin educación cercana</span>`,
+            );
+        if (!comisaria || comisaria.distance > currentThreshold)
+            chips.push(
+                `<span class="chip chip-bad">Sin seguridad cercana</span>`,
+            );
+        if (!chips.length)
+            chips.push(
+                `<span class="chip chip-good">Todos los servicios accesibles</span>`,
+            );
+
+        const tripleAlert = data.tripleCarencia
+            ? `<div class="triple-alert">
+           <strong>⚠️ Zona de Triple Carencia</strong>
+           <p>Este centro poblado está a más de ${currentThreshold} km de salud, educación y seguridad.</p>
+         </div>`
+            : "";
+
+        const html = `
+      <div class="cp-header animate-in">
+        <div class="cp-name">${data.centroPoblado}</div>
+        ${data.coords ? `<div class="cp-coords">${data.coords[1].toFixed(5)}, ${data.coords[0].toFixed(5)}</div>` : ""}
+      </div>
+
+      <div class="score-ring-wrap animate-in">
+        ${buildScoreRingSVG(score)}
+        <div class="score-label">
+          <p>Índice de accesibilidad</p>
+          <div class="score-value">${score}<span style="font-size:1rem;opacity:.6">/100</span></div>
+          <div class="score-tier">${scoreLabel}</div>
+        </div>
+      </div>
+
+      ${tripleAlert}
+
+      <div class="carencia-chips animate-in">${chips.join("")}</div>
+      <div style="margin-top:.75rem;">
+        ${renderService("🏥", "Salud", salud, "#e74c3c")}
+        ${renderService("🏫", "Educación", educacion, "#3498db")}
+        ${renderService("👮", "Comisaría", comisaria, "#2ecc71")}
+      </div>
+
+      <div class="analysis-actions animate-in">
+        <button class="btn btn-ghost" id="btn-export" style="flex:1;">
+          📋 Exportar
+        </button>
+        <button class="btn btn-ghost" id="btn-share" style="flex:1;">
+          🔗 Copiar
+        </button>
+      </div>
+
+      <p class="disclaimer">
+        Distancias en línea recta (haversine). Tiempos estimados: 5 km/h a pie, 40 km/h en vehículo (promedio rural). Los datos reflejan la oferta registrada, no la operatividad real de los servicios.
+      </p>
+    `;
+
+        emptyEl.classList.add("hidden");
+        resultEl.innerHTML = html;
+        resultEl.classList.remove("hidden");
+
+        // Export button
+        document
+            .getElementById("btn-export")
+            ?.addEventListener("click", () => exportCSV(data));
+        document
+            .getElementById("btn-share")
+            ?.addEventListener("click", () => copyToClipboard(data));
+    }
+
+    /* ── Scan results ─────────────────────────────────────────────────── */
+    window.addEventListener(
+        "tripleCarenciaResult",
+        (
+            e: CustomEvent<{
+                count: number;
+                total: number;
+                thresholdKm: number;
+            }>,
+        ) => {
+            const { count, total, thresholdKm } = e.detail;
+            const pct = total > 0 ? ((count / total) * 100).toFixed(1) : "0.0";
+            scanSummaryEl.innerHTML = `
+      <div class="animate-in">
+        <span class="scan-count">${count.toLocaleString()}</span>
+        <div class="scan-subtitle">Centros poblados con triple carencia (> ${thresholdKm} km)</div>
+        <div style="margin-top:.4rem; font-size:.8rem; color:var(--text-muted);">
+          <strong>${pct}%</strong> del total analizado (${total.toLocaleString()} CPs visibles)
+        </div>
+      </div>
+    `;
+            scanResultEl.classList.remove("hidden");
+        },
+    );
+
+    /* ── Export helpers ───────────────────────────────────────────────── */
+    function exportCSV(data: AccessibilityStats) {
+        const rows = [
+            ["Centro Poblado", data.centroPoblado],
+            ["Salud - Nombre", data.salud?.name ?? "N/D"],
+            ["Salud - Distancia km", data.salud?.distance?.toFixed(2) ?? "N/D"],
+            ["Educación - Nombre", data.educacion?.name ?? "N/D"],
+            [
+                "Educación - Distancia km",
+                data.educacion?.distance?.toFixed(2) ?? "N/D",
+            ],
+            ["Comisaría - Nombre", data.comisaria?.name ?? "N/D"],
+            [
+                "Comisaría - Distancia km",
+                data.comisaria?.distance?.toFixed(2) ?? "N/D",
+            ],
+            ["Triple Carencia", data.tripleCarencia ? "Sí" : "No"],
+        ];
+        const csv = rows
+            .map((r) => r.map((c) => `"${c}"`).join(","))
+            .join("\n");
+        const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `accesibilidad_${data.centroPoblado.replace(/\s+/g, "_")}.csv`;
+        a.click();
+        URL.revokeObjectURL(url);
+    }
+
+    function copyToClipboard(data: AccessibilityStats) {
+        const txt = [
+            `📍 ${data.centroPoblado}`,
+            `🏥 Salud: ${data.salud ? data.salud.distance.toFixed(1) + " km — " + data.salud.name : "N/D"}`,
+            `🏫 Educación: ${data.educacion ? data.educacion.distance.toFixed(1) + " km — " + data.educacion.name : "N/D"}`,
+            `👮 Comisaría: ${data.comisaria ? data.comisaria.distance.toFixed(1) + " km — " + data.comisaria.name : "N/D"}`,
+            data.tripleCarencia ? "⚠️ TRIPLE CARENCIA" : "",
+            "— GeoTon Accesibilidad",
+        ]
+            .filter(Boolean)
+            .join("\n");
+
+        navigator.clipboard.writeText(txt).then(() => {
+            const btn = document.getElementById("btn-share");
+            if (btn) {
+                btn.textContent = "✅ Copiado";
+                setTimeout(() => {
+                    btn.textContent = "🔗 Copiar";
+                }, 2000);
+            }
+        });
+    }
 </script>
